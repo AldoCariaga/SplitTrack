@@ -26,6 +26,7 @@ MMDeviceEnumerator
 IMMDeviceEnumerator
 IMMDevice
 IMMDeviceCollection
+IMMNotificationClient
 IPropertyStore
 PKEY_Device_FriendlyName
 DEVICE_STATE

@@ -3,8 +3,8 @@ using SplitTrack.Capture.Video;
 using SplitTrack.Common.Diagnostics;
 using SplitTrack.Common.Time;
 using SplitTrack.Encode.Video;
+using SplitTrack.Engine.Video;
 using SplitTrack.Mux.Mkv;
-using SplitTrack.VideoPoc.Recording;
 
 namespace SplitTrack.VideoPoc.Commands;
 
@@ -26,10 +26,10 @@ internal static class RecordCommand
 
         using GraphicsDevice device = GraphicsDevice.Create(options.Adapter);
         using WgcCaptureSource capture = OpenCapture(options, device);
-        (int width, int height) = OutputSize(capture.Width, capture.Height, options.Height);
+        (int width, int height) = VideoEncoderSettings.ScaledSize(capture.Width, capture.Height, options.Height);
         var settings = new VideoEncoderSettings(width, height, options.Fps, options.BitrateKbps);
 
-        VideoEncoderKind kind = ChooseEncoder(options, device, settings);
+        VideoEncoderKind kind = options.Encoder ?? VideoEncoder.SelectAuto(device.Device, device.Adapter.VendorId, settings);
         using var converter = new Nv12Converter(device.Device, capture.Width, capture.Height, width, height, options.Fps);
         using VideoEncoder encoder = VideoEncoder.Open(device.Device, kind, settings);
         using var mkv = new MkvWriter(path);
@@ -47,7 +47,7 @@ internal static class RecordCommand
         Console.WriteLine($"  -> {path}");
         Console.WriteLine();
 
-        var pipeline = new VideoPipeline(capture, converter, encoder, mkv, stream);
+        var pipeline = new VideoPipeline(capture, converter, encoder, packet => mkv.Write(stream, packet));
         capture.Start();
         WaitForFirstFrame(capture);
 
@@ -83,41 +83,6 @@ internal static class RecordCommand
             ? monitors[index]
             : throw new UsageException($"There is no monitor {index}; this PC has {monitors.Count}.");
         return WgcCaptureSource.ForMonitor(device, monitor, options.Cursor);
-    }
-
-    /// <summary>Never upscales; both sides even, as NV12 requires.</summary>
-    private static (int Width, int Height) OutputSize(int width, int height, int? requestedHeight)
-    {
-        if (requestedHeight is not { } h || h >= height)
-        {
-            return (width, height);
-        }
-
-        int scaledWidth = (int)Math.Round((double)width * h / height);
-        return (Math.Max(2, scaledWidth & ~1), Math.Max(2, h & ~1));
-    }
-
-    private static VideoEncoderKind ChooseEncoder(RecordOptions options, GraphicsDevice device, VideoEncoderSettings settings)
-    {
-        if (options.Encoder is { } explicitKind)
-        {
-            return explicitKind;
-        }
-
-        var failures = new List<string>();
-        foreach (VideoEncoderKind kind in VideoEncoderKinds.AutoOrder(device.Adapter.VendorId))
-        {
-            string? error = VideoEncoder.Test(device.Device, kind, settings);
-            if (error is null)
-            {
-                Log.Info($"Auto encoder: {kind.ShortName()}");
-                return kind;
-            }
-
-            failures.Add($"{kind.ShortName()}: {error}");
-        }
-
-        throw new InvalidOperationException($"No H.264 encoder works here ({string.Join("; ", failures)}).");
     }
 
     private static void WaitForFirstFrame(WgcCaptureSource capture)

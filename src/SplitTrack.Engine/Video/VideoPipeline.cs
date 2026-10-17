@@ -3,26 +3,27 @@ using SplitTrack.Capture.Video;
 using SplitTrack.Common.Diagnostics;
 using SplitTrack.Common.Time;
 using SplitTrack.Encode.Video;
-using SplitTrack.Mux.Mkv;
+using SplitTrack.FFmpeg;
 
-namespace SplitTrack.VideoPoc.Recording;
+namespace SplitTrack.Engine.Video;
 
-internal readonly record struct PipelineStats(
+/// <summary>Packets and bytes are the encoder's output.</summary>
+public readonly record struct PipelineStats(
     long Encoded, long Duplicated, long Skipped, double EncodeTotalMs, double EncodeMaxMs, long Packets, long Bytes);
 
 /// <summary>
 /// Constant-frame-rate encode loop on the QPC clock. Tick i is due at start + i/fps; it converts
 /// whatever the capture canvas holds then (repeating a frame when the screen did not change) and
 /// is encoded with pts = i. A tick that is already a whole frame late is skipped, never shifted, so
-/// video time stays wall-clock time. M3 moves this into the engine.
+/// video time stays wall-clock time.
 /// </summary>
-internal sealed class VideoPipeline
+public sealed class VideoPipeline
 {
     private readonly WgcCaptureSource _capture;
     private readonly Nv12Converter _converter;
     private readonly VideoEncoder _encoder;
-    private readonly MkvWriter _mkv;
-    private readonly int _stream;
+    private readonly Action<MediaPacket> _output;
+    private readonly Action<MediaPacket> _countAndOutput;
     private readonly int _fps;
     private readonly Lock _statsGate = new();
     private Thread? _thread;
@@ -30,13 +31,14 @@ internal sealed class VideoPipeline
     private long _endQpc = long.MaxValue;
     private PipelineStats _stats;
 
-    public VideoPipeline(WgcCaptureSource capture, Nv12Converter converter, VideoEncoder encoder, MkvWriter mkv, int stream)
+    /// <param name="output">Receives each encoded packet, on the encode thread, and owns it from then on.</param>
+    public VideoPipeline(WgcCaptureSource capture, Nv12Converter converter, VideoEncoder encoder, Action<MediaPacket> output)
     {
         _capture = capture;
         _converter = converter;
         _encoder = encoder;
-        _mkv = mkv;
-        _stream = stream;
+        _output = output;
+        _countAndOutput = CountAndOutput;
         _fps = encoder.Settings.Fps;
     }
 
@@ -60,7 +62,7 @@ internal sealed class VideoPipeline
     {
         lock (_statsGate)
         {
-            return _stats with { Packets = _mkv.PacketsWritten, Bytes = _mkv.BytesWritten };
+            return _stats;
         }
     }
 
@@ -97,7 +99,7 @@ internal sealed class VideoPipeline
                 (nint texture, uint slice) = _encoder.BeginFrame();
                 _capture.ReadCanvas((_converter, texture, slice), static (canvas, s) => s._converter.Convert(canvas, s.texture, s.slice));
                 long captured = _capture.GetStats().Frames;
-                _encoder.EncodeFrame(index, packet => _mkv.Write(_stream, packet));
+                _encoder.EncodeFrame(index, _countAndOutput);
                 double ms = watch.Elapsed.TotalMilliseconds;
 
                 lock (_statsGate)
@@ -116,7 +118,7 @@ internal sealed class VideoPipeline
                 index++;
             }
 
-            _encoder.Flush(packet => _mkv.Write(_stream, packet));
+            _encoder.Flush(_countAndOutput);
             Log.Info($"Encode loop finished at frame {index}");
         }
         catch (Exception ex)
@@ -124,5 +126,15 @@ internal sealed class VideoPipeline
             Fault = ex;
             Log.Error("Video encode loop failed", ex);
         }
+    }
+
+    private void CountAndOutput(MediaPacket packet)
+    {
+        lock (_statsGate)
+        {
+            _stats = _stats with { Packets = _stats.Packets + 1, Bytes = _stats.Bytes + packet.Size };
+        }
+
+        _output(packet);
     }
 }

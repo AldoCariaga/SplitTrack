@@ -1,0 +1,17 @@
+<Project>
+  <!-- Copies the FFmpeg DLLs from tools\get-ffmpeg.ps1 into an 'ffmpeg' folder next to the exe (not bundled: ~190 MB). -->
+  <PropertyGroup>
+    <FFmpegDir>$(MSBuildThisFileDirectory)..\third_party\ffmpeg\</FFmpegDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Only what libavcodec, libavformat and libswresample load; avfilter and avdevice (42 MB) are unused. -->
+    <None Include="$(FFmpegDir)avcodec-*.dll;$(FFmpegDir)avformat-*.dll;$(FFmpegDir)avutil-*.dll;$(FFmpegDir)swresample-*.dll"
+          Link="ffmpeg\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+
+  <Target Name="CheckFFmpeg" BeforeTargets="Build" Condition="!Exists('$(FFmpegDir)VERSION.txt')">
+    <Error Text="FFmpeg DLLs are missing. Run: powershell -File tools\get-ffmpeg.ps1" />
+  </Target>
+</Project>

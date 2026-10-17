@@ -95,6 +95,25 @@ public sealed unsafe class VideoEncoder : IDisposable
         }
     }
 
+    /// <summary>The first kind in <see cref="VideoEncoderKinds.AutoOrder"/> that passes <see cref="Test"/> at these settings.</summary>
+    public static VideoEncoderKind SelectAuto(ID3D11Device device, uint gpuVendorId, VideoEncoderSettings settings)
+    {
+        var failures = new List<string>();
+        foreach (VideoEncoderKind kind in VideoEncoderKinds.AutoOrder(gpuVendorId))
+        {
+            string? error = Test(device, kind, settings);
+            if (error is null)
+            {
+                Log.Info($"Auto encoder: {kind.ShortName()}");
+                return kind;
+            }
+
+            failures.Add($"{kind.ShortName()}: {error}");
+        }
+
+        throw new InvalidOperationException($"No H.264 encoder works here ({string.Join("; ", failures)}).");
+    }
+
     /// <summary>Takes a free NV12 texture slice from the pool for the next frame.</summary>
     public (nint Texture, uint Slice) BeginFrame()
     {

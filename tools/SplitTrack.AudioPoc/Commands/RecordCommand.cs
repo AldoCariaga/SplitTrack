@@ -1,6 +1,4 @@
 using System.Diagnostics;
-using System.Text;
-using SplitTrack.AudioPoc.Metering;
 using SplitTrack.Capture.Audio;
 using SplitTrack.Capture.Audio.Sessions;
 using SplitTrack.Capture.Audio.Timeline;
@@ -125,35 +123,10 @@ internal static class RecordCommand
         }
     }
 
-    /// <summary>
-    /// A PID is used as given. An exe name resolves to its root process; with several roots the one
-    /// owning the most audio sessions wins, then the oldest.
-    /// </summary>
-    private static ProcessEntry ResolveProcess(string spec, ProcessTree tree, IReadOnlyList<AudioProcessInfo> audio)
-    {
-        if (int.TryParse(spec, out int pid))
-        {
-            return tree.Get(pid) ?? throw new UsageException($"No running process has pid {pid}.");
-        }
-
-        List<int> roots = tree.FindByExe(spec).Select(p => tree.FindRoot(p.Pid)).Distinct().ToList();
-        if (roots.Count == 0)
-        {
-            throw new UsageException($"No running process is named '{ProcessTree.NormalizeExeName(spec)}'. Start it first, or run 'list'.");
-        }
-
-        int chosen = roots
-            .OrderByDescending(r => audio.FirstOrDefault(a => a.RootPid == r)?.SessionPids.Count ?? 0)
-            .ThenBy(r => tree.GetCreationTime(r) ?? long.MaxValue)
-            .First();
-
-        if (roots.Count > 1)
-        {
-            Log.Warn($"'{spec}' has {roots.Count} separate process trees ({string.Join(", ", roots)}); recording pid {chosen}");
-        }
-
-        return tree.Get(chosen)!;
-    }
+    private static ProcessEntry ResolveProcess(string spec, ProcessTree tree, IReadOnlyList<AudioProcessInfo> audio) =>
+        ProcessResolver.Resolve(spec, tree, audio) ?? throw new UsageException(int.TryParse(spec, out int pid)
+            ? $"No running process has pid {pid}."
+            : $"No running process is named '{ProcessTree.NormalizeExeName(spec)}'. Start it first, or run 'list'.");
 
     private static string FilePath(RecordOptions options, string stamp, string suffix)
     {
@@ -334,40 +307,5 @@ internal static class RecordCommand
         }
 
         public void WriteSilence(long frames) => wav.WriteSilence(frames);
-    }
-
-    /// <summary>Redraws a block of lines in place on a console, or prints every 5 s when redirected.</summary>
-    private sealed class StatusDisplay(bool interactive)
-    {
-        private int _top = -1;
-        private int _renders;
-
-        public void Render(List<string> lines)
-        {
-            if (!interactive)
-            {
-                if (_renders++ % 5 == 0)
-                {
-                    lines.ForEach(Console.WriteLine);
-                }
-
-                return;
-            }
-
-            int width = Math.Max(20, Console.WindowWidth - 1);
-            var block = new StringBuilder();
-            foreach (string line in lines)
-            {
-                block.AppendLine(line.Length > width ? line[..width] : line.PadRight(width));
-            }
-
-            if (_top >= 0)
-            {
-                Console.SetCursorPosition(0, _top);
-            }
-
-            Console.Write(block);
-            _top = Console.CursorTop - lines.Count;
-        }
     }
 }

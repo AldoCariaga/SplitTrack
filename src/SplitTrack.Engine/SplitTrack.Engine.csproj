@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\SplitTrack.Capture\SplitTrack.Capture.csproj" />
+    <ProjectReference Include="..\SplitTrack.Encode\SplitTrack.Encode.csproj" />
+    <ProjectReference Include="..\SplitTrack.Mux\SplitTrack.Mux.csproj" />
+  </ItemGroup>
+</Project>

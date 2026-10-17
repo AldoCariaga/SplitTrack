@@ -1,11 +1,10 @@
 using System.Buffers.Binary;
 using System.Runtime.InteropServices;
-using SplitTrack.Common.Audio;
 
-namespace SplitTrack.AudioPoc.Metering;
+namespace SplitTrack.Common.Audio;
 
 /// <summary>Highest sample magnitude since the last <see cref="TakePeak"/>; written and read on different threads.</summary>
-internal sealed class PeakMeter(SampleType sampleType)
+public sealed class PeakMeter(SampleType sampleType)
 {
     private int _peakBits;
 

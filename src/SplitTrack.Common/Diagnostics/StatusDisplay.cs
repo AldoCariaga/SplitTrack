@@ -1,9 +1,9 @@
 using System.Text;
 
-namespace SplitTrack.VideoPoc.Recording;
+namespace SplitTrack.Common.Diagnostics;
 
 /// <summary>Redraws a block of lines in place on a console, or prints every 5 s when redirected.</summary>
-internal sealed class StatusDisplay(bool interactive)
+public sealed class StatusDisplay(bool interactive)
 {
     private int _top = -1;
     private int _renders;

@@ -11,8 +11,11 @@ namespace SplitTrack.Mux.Mkv;
 /// </summary>
 public sealed unsafe class MkvWriter : IDisposable
 {
-    // About 10 s of 60 fps video; beyond that the encoder thread waits for the disk.
-    private const int QueueCapacity = 600;
+    // About 15 s of 60 fps video plus four audio tracks; beyond that producers wait for the disk.
+    private const int QueueCapacity = 4096;
+
+    // A file cut short by a crash loses at most the last cluster.
+    private const string ClusterTimeLimitMs = "1000";
 
     private readonly Channel<(int Stream, MediaPacket Packet)> _queue =
         Channel.CreateBounded<(int, MediaPacket)>(new BoundedChannelOptions(QueueCapacity) { SingleReader = true });
@@ -43,7 +46,8 @@ public sealed unsafe class MkvWriter : IDisposable
     public Exception? WriteError => Volatile.Read(ref _writeError);
 
     /// <summary>Declares a stream before <see cref="Start"/>; returns its index for <see cref="Write"/>.</summary>
-    public int AddStream(MediaStreamInfo info)
+    /// <param name="isDefault">Players pick the default track of each type; Matroska assumes default when unset, FFmpeg writes it as given.</param>
+    public int AddStream(MediaStreamInfo info, bool isDefault = true)
     {
         if (_writer is not null)
         {
@@ -60,6 +64,7 @@ public sealed unsafe class MkvWriter : IDisposable
         stream->time_base = info.TimeBase;
         stream->avg_frame_rate = info.FrameRate;
         ffmpeg.av_dict_set(&stream->metadata, "title", info.Title, 0);
+        stream->disposition = isDefault ? ffmpeg.AV_DISPOSITION_DEFAULT : 0;
         return stream->index;
     }
 
@@ -67,7 +72,16 @@ public sealed unsafe class MkvWriter : IDisposable
     public void Start()
     {
         FFmpegException.Check(ffmpeg.avio_open(&_format->pb, Path, ffmpeg.AVIO_FLAG_WRITE), $"Opening {Path}");
-        FFmpegException.Check(ffmpeg.avformat_write_header(_format, null), "avformat_write_header");
+        AVDictionary* options = null;
+        try
+        {
+            ffmpeg.av_dict_set(&options, "cluster_time_limit", ClusterTimeLimitMs, 0);
+            FFmpegException.Check(ffmpeg.avformat_write_header(_format, &options), "avformat_write_header");
+        }
+        finally
+        {
+            ffmpeg.av_dict_free(&options);
+        }
 
         // The muxer may change each stream's time base (Matroska uses 1/1000).
         for (int i = 0; i < _format->nb_streams; i++)

@@ -2,7 +2,7 @@ namespace SplitTrack.Capture.Audio;
 
 /// <summary>
 /// One WASAPI packet, valid only for the duration of <see cref="IAudioSink.OnPacket"/>.
-/// <see cref="Data"/> is empty when <see cref="Silent"/> is set.
+/// <see cref="Data"/> is empty when the frames are all zero; WASAPI packets flagged <see cref="Silent"/> are.
 /// </summary>
 public readonly ref struct AudioPacket
 {

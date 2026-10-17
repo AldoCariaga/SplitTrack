@@ -14,7 +14,8 @@ public readonly record struct AlignerStats(
     long DroppedFrames,
     long EmittedFrames,
     long LastDriftTicks,
-    long MaxAbsDriftTicks);
+    long MaxAbsDriftTicks,
+    long SmoothedDriftTicks);
 
 /// <summary>
 /// Places each packet on a QPC-anchored frame timeline starting at <see cref="Arm"/>: zero-fills
@@ -25,13 +26,18 @@ public sealed class AudioTrackAligner : IAudioSink
     private static readonly long GapThresholdTicks = QpcClock.MillisecondsToTicks(20);
     private static readonly long IdleLagTicks = QpcClock.MillisecondsToTicks(50);
 
+    // Per measured packet; about 0.5 s of 10 ms packets.
+    private const double DriftSmoothing = 0.02;
+
     private readonly IAudioFrameWriter _writer;
+    private readonly string _name;
     private readonly Lock _gate = new();
     private readonly int _gapThresholdFrames;
 
     private long _startQpc = long.MaxValue;
     private long _endFrame = long.MaxValue;
     private long _emitted;
+    private bool _resync;
 
     private long _packets;
     private long _silentPackets;
@@ -42,11 +48,13 @@ public sealed class AudioTrackAligner : IAudioSink
     private long _droppedFrames;
     private long _lastDriftFrames;
     private long _maxAbsDriftFrames;
+    private double _smoothedDriftFrames;
 
-    public AudioTrackAligner(AudioFormat format, IAudioFrameWriter writer)
+    public AudioTrackAligner(AudioFormat format, IAudioFrameWriter writer, string name = "track")
     {
         Format = format;
         _writer = writer;
+        _name = name;
         _gapThresholdFrames = (int)QpcClock.TicksToFrames(GapThresholdTicks, format.SampleRate);
     }
 
@@ -54,12 +62,40 @@ public sealed class AudioTrackAligner : IAudioSink
 
     public bool IsArmed => Volatile.Read(ref _startQpc) != long.MaxValue;
 
+    /// <summary>
+    /// Drift (packet position minus frames written) averaged over the last ~0.5 s; positive means the
+    /// source delivers fewer frames than the clock says have passed.
+    /// </summary>
+    public double SmoothedDriftFrames
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _smoothedDriftFrames;
+            }
+        }
+    }
+
     /// <summary>Frame 0 of the track is <paramref name="startQpc"/>; everything earlier is discarded.</summary>
     public void Arm(long startQpc)
     {
         lock (_gate)
         {
             _startQpc = startQpc;
+        }
+    }
+
+    /// <summary>
+    /// A new source follows: its first packet is placed exactly at its timestamp, padding or dropping
+    /// as needed, instead of within the drift tolerance of what was written before.
+    /// </summary>
+    public void Resync()
+    {
+        lock (_gate)
+        {
+            _resync = true;
+            _smoothedDriftFrames = 0;
         }
     }
 
@@ -105,7 +141,8 @@ public sealed class AudioTrackAligner : IAudioSink
                 _droppedFrames,
                 _emitted,
                 QpcClock.FramesToTicks(_lastDriftFrames, rate),
-                QpcClock.FramesToTicks(_maxAbsDriftFrames, rate));
+                QpcClock.FramesToTicks(_maxAbsDriftFrames, rate),
+                QpcClock.FramesToTicks((long)Math.Round(_smoothedDriftFrames), rate));
         }
     }
 
@@ -150,19 +187,28 @@ public sealed class AudioTrackAligner : IAudioSink
 
             // Positive drift: the packet starts later than what we have written so far.
             long drift = position - _emitted;
-            if (_emitted > 0)
+            bool exact = _emitted == 0 || _resync;
+            if (!exact)
             {
                 _lastDriftFrames = drift;
                 _maxAbsDriftFrames = Math.Max(_maxAbsDriftFrames, Math.Abs(drift));
+
+                // Gaps and overlaps are fixed below in one go; only tolerated drift is clock drift.
+                if (Math.Abs(drift) <= _gapThresholdFrames)
+                {
+                    _smoothedDriftFrames += (drift - _smoothedDriftFrames) * DriftSmoothing;
+                }
             }
 
-            // The first audio is placed exactly; later small drift is tolerated to avoid clicks.
-            if (drift > _gapThresholdFrames || (_emitted == 0 && drift > 0))
+            // A new source is placed exactly; later small drift is tolerated to avoid clicks.
+            if (drift > _gapThresholdFrames || (exact && drift > 0))
             {
+                LogCorrection("gap", drift, exact);
                 PadTo(position);
             }
-            else if (drift < -_gapThresholdFrames)
+            else if (drift < -_gapThresholdFrames || (exact && drift < 0))
             {
+                LogCorrection("overlap", -drift, exact);
                 int overlap = (int)Math.Min(packet.Frames - skip, -drift);
                 skip += overlap;
                 _droppedFrames += overlap;
@@ -174,7 +220,8 @@ public sealed class AudioTrackAligner : IAudioSink
                 return;
             }
 
-            if (packet.Silent)
+            _resync = false;
+            if (packet.Data.IsEmpty)
             {
                 _writer.WriteSilence(count);
             }
@@ -203,6 +250,14 @@ public sealed class AudioTrackAligner : IAudioSink
             {
                 PadTo(target);
             }
+        }
+    }
+
+    private void LogCorrection(string kind, long frames, bool exact)
+    {
+        if (!exact)
+        {
+            Log.Debug($"{_name}: {kind} of {frames * 1000.0 / Format.SampleRate:0.0} ms at {_emitted * 1000.0 / Format.SampleRate:0} ms");
         }
     }
 
