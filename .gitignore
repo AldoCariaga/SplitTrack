@@ -1,0 +1,20 @@
+# Private notes and plans (never committed)
+.local/
+
+# Build output
+bin/
+obj/
+out/
+artifacts/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Recordings produced while testing
+*.wav
+*.mkv
+*.mp4

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>SplitTrack.AudioPoc</AssemblyName>
+    <RootNamespace>SplitTrack.AudioPoc</RootNamespace>
+  </PropertyGroup>
+
+  <!-- `dotnet publish` gives one exe that runs on a PC without .NET installed. -->
+  <PropertyGroup>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SplitTrack.Capture\SplitTrack.Capture.csproj" />
+    <ProjectReference Include="..\..\src\SplitTrack.Mux\SplitTrack.Mux.csproj" />
+  </ItemGroup>
+</Project>

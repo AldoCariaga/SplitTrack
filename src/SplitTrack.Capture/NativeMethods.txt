@@ -1,0 +1,47 @@
+// Process loopback activation
+ActivateAudioInterfaceAsync
+IActivateAudioInterfaceCompletionHandler
+IActivateAudioInterfaceAsyncOperation
+IAgileObject
+AUDIOCLIENT_ACTIVATION_PARAMS
+AUDIOCLIENT_ACTIVATION_TYPE
+PROCESS_LOOPBACK_MODE
+VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK
+PROPVARIANT
+PropVariantClear
+CoTaskMemFree
+
+// WASAPI
+IAudioClient
+IAudioCaptureClient
+AUDCLNT_SHAREMODE
+AUDCLNT_STREAMFLAGS_*
+_AUDCLNT_BUFFERFLAGS
+AUDCLNT_E_*
+WAVEFORMATEX
+WAVEFORMATEXTENSIBLE
+
+// Devices and sessions
+MMDeviceEnumerator
+IMMDeviceEnumerator
+IMMDevice
+IMMDeviceCollection
+IPropertyStore
+PKEY_Device_FriendlyName
+DEVICE_STATE
+IAudioSessionManager2
+IAudioSessionEnumerator
+IAudioSessionControl2
+STGM
+
+// Threads
+AvSetMmThreadCharacteristics
+AvRevertMmThreadCharacteristics
+
+// Processes
+CreateToolhelp32Snapshot
+Process32FirstW
+Process32NextW
+OpenProcess
+QueryFullProcessImageName
+GetProcessTimes
