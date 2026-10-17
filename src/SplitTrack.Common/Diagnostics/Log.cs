@@ -1,3 +1,5 @@
+using SplitTrack.Common.Platform;
+
 namespace SplitTrack.Common.Diagnostics;
 
 public enum LogLevel
@@ -25,8 +27,7 @@ public static class Log
 
     public static void Init(string appName)
     {
-        string dir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SplitTrack", "logs");
+        string dir = AppPaths.Logs;
 
         try
         {

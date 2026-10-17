@@ -12,7 +12,8 @@ namespace SplitTrack.Engine.Audio;
 /// <param name="Pid">Process (or excluded process) the stream was opened on.</param>
 /// <param name="CreationTime">That process's creation time, to tell a reused PID apart.</param>
 /// <param name="DeviceId">Endpoint ID for a microphone.</param>
-internal sealed record SourceIdentity(string Description, int? Pid = null, long? CreationTime = null, string? DeviceId = null);
+/// <param name="Name">What the library shows as the track's source: exe name or device name.</param>
+internal sealed record SourceIdentity(string Description, int? Pid = null, long? CreationTime = null, string? DeviceId = null, string? Name = null);
 
 /// <summary>
 /// One audio track of the recording: a fixed aligner → AAC chain, fed by whichever source is
@@ -49,6 +50,9 @@ internal sealed class AudioTrack : IDisposable
     /// <summary>Null while nothing is attached.</summary>
     public SourceIdentity? Identity { get; private set; }
 
+    /// <summary>The most recent source's <see cref="SourceIdentity.Name"/>; kept after it stops.</summary>
+    public string? LastSourceName { get; private set; }
+
     public Exception? Fault
     {
         get
@@ -83,6 +87,7 @@ internal sealed class AudioTrack : IDisposable
             _sink = new ResamplingSink(source.Format, Aligner);
             _source = source;
             Identity = identity;
+            LastSourceName = identity.Name ?? LastSourceName;
             source.Start(_sink);
         }
 

@@ -74,6 +74,11 @@ public sealed class RecordingSession : IDisposable
             throw new RecordingSetupException("Nothing to save to: no output file and no replay buffer.");
         }
 
+        if (options.AudioTracks.Count(t => t.Kind == AudioTrackKind.Game) > 1 || options.AudioTracks.Count(t => t.Kind == AudioTrackKind.System) > 1)
+        {
+            throw new RecordingSetupException("A session has at most one Game track and one System track.");
+        }
+
         var session = new RecordingSession(options);
         try
         {
@@ -304,7 +309,7 @@ public sealed class RecordingSession : IDisposable
             ? null
             : new SidecarVideo(_video.Settings.Width, _video.Settings.Height, _video.Settings.Fps, _video.Settings.BitrateKbps, _video.EncoderKind.ShortName());
         var tracks = _tracks
-            .Select((t, i) => new SidecarTrack(_videoStream + 1 + i, t.Title, t.Options.Kind.ToString().ToLowerInvariant(), t.Options.Target))
+            .Select((t, i) => new SidecarTrack(_videoStream + 1 + i, t.Title, t.Options.Kind.ToString().ToLowerInvariant(), t.Options.Targets, t.LastSourceName))
             .ToList();
         return new Sidecar(
             Sidecar.CurrentVersion,
@@ -313,7 +318,7 @@ public sealed class RecordingSession : IDisposable
             hasThumbnail ? Path.GetFileName(paths.Thumbnail) : null,
             created,
             Math.Round(seconds, 3),
-            _options.AudioTracks.FirstOrDefault(t => t.IsGame)?.Target,
+            _tracks.FirstOrDefault(t => t.Options.Kind == AudioTrackKind.Game)?.LastSourceName,
             video,
             tracks,
             kind == EntryKind.Clip ? _options.Replay?.BufferSeconds : null);

@@ -32,7 +32,7 @@ internal sealed class SourceWatcher : IDisposable
     public SourceWatcher(IReadOnlyList<AudioTrack> tracks)
     {
         _tracks = tracks;
-        _game = tracks.FirstOrDefault(t => t.Options.IsGame);
+        _game = tracks.FirstOrDefault(t => t.Options.Kind == AudioTrackKind.Game);
         if (tracks.Any(t => t.Options.Kind == AudioTrackKind.Microphone))
         {
             _devices = AudioDeviceWatcher.Start();
@@ -55,7 +55,7 @@ internal sealed class SourceWatcher : IDisposable
             {
                 switch (track.Options.Kind)
                 {
-                    case AudioTrackKind.Process:
+                    case AudioTrackKind.Game or AudioTrackKind.App:
                         ReconcileProcess(track, tree, now);
                         break;
                     case AudioTrackKind.System:
@@ -109,7 +109,7 @@ internal sealed class SourceWatcher : IDisposable
 
     private void ReconcileProcess(AudioTrack track, ProcessTree tree, long now)
     {
-        string spec = track.Options.Target!;
+        // A running target is kept even if an earlier one in the list starts later.
         if (track.Identity is { } current && track.Fault is null && IsAlive(current, tree))
         {
             return;
@@ -120,14 +120,15 @@ internal sealed class SourceWatcher : IDisposable
             return;
         }
 
-        ProcessEntry? target = ProcessResolver.Resolve(spec, tree);
+        ProcessEntry? target = track.Options.Targets.Select(spec => ProcessResolver.Resolve(spec, tree)).FirstOrDefault(p => p is not null);
         if (target is null)
         {
             track.Detach();
             return;
         }
 
-        var identity = new SourceIdentity($"{target.ExeName} (pid {target.Pid} tree)", target.Pid, tree.GetCreationTime(target.Pid));
+        var identity = new SourceIdentity(
+            $"{target.ExeName} (pid {target.Pid} tree)", target.Pid, tree.GetCreationTime(target.Pid), Name: target.ExeName);
         Attach(track, ProcessLoopbackSource.Open(track.Title, target.Pid, includeTree: true, AudioFormat.Float48Stereo), identity, now);
     }
 
@@ -163,7 +164,10 @@ internal sealed class SourceWatcher : IDisposable
             return;
         }
 
-        AudioDeviceInfo? device = AudioDeviceEnumerator.Find(AudioDeviceFlow.Capture, track.Options.Target);
+        IReadOnlyList<string> filters = track.Options.Targets;
+        AudioDeviceInfo? device = filters.Count == 0
+            ? AudioDeviceEnumerator.Find(AudioDeviceFlow.Capture, null)
+            : filters.Select(f => AudioDeviceEnumerator.Find(AudioDeviceFlow.Capture, f)).FirstOrDefault(d => d is not null);
         if (device is null)
         {
             track.Detach();
@@ -176,7 +180,7 @@ internal sealed class SourceWatcher : IDisposable
             return;
         }
 
-        Attach(track, DeviceCaptureSource.OpenCapture(track.Title, device), new SourceIdentity($"'{device.Name}'", DeviceId: device.Id), now);
+        Attach(track, DeviceCaptureSource.OpenCapture(track.Title, device), new SourceIdentity($"'{device.Name}'", DeviceId: device.Id, Name: device.Name), now);
     }
 
     private void Attach(AudioTrack track, IAudioSource source, SourceIdentity identity, long now)

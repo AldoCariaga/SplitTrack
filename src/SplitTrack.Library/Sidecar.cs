@@ -16,9 +16,10 @@ public enum EntryKind
 public sealed record SidecarVideo(int Width, int Height, int Fps, int BitrateKbps, string Encoder);
 
 /// <param name="Stream">Stream index in the MKV.</param>
-/// <param name="Kind">process, system or microphone.</param>
-/// <param name="Target">Exe name or PID for a process track, name filter for a microphone.</param>
-public sealed record SidecarTrack(int Stream, string Title, string Kind, string? Target);
+/// <param name="Kind">game, app, microphone or system.</param>
+/// <param name="Targets">As configured: exe names or PIDs for game / app, device name filters for a microphone.</param>
+/// <param name="Source">What was last captured: exe name or device name; null if nothing was.</param>
+public sealed record SidecarTrack(int Stream, string Title, string Kind, IReadOnlyList<string> Targets, string? Source);
 
 /// <summary>
 /// What the library knows about one recording or clip, stored next to it as JSON. Written after the
@@ -26,7 +27,7 @@ public sealed record SidecarTrack(int Stream, string Title, string Kind, string?
 /// </summary>
 /// <param name="File">The video's file name, relative to the sidecar.</param>
 /// <param name="Thumbnail">JPEG file name relative to the sidecar, or null if none could be made.</param>
-/// <param name="Game">The game's exe name or PID as configured, or null without a game track.</param>
+/// <param name="Game">The exe the Game track captured last, or null without a game track or game.</param>
 /// <param name="ClipLengthSeconds">For a clip: the replay buffer length asked for.</param>
 public sealed record Sidecar(
     int Version,
@@ -40,7 +41,8 @@ public sealed record Sidecar(
     IReadOnlyList<SidecarTrack> AudioTracks,
     double? ClipLengthSeconds = null)
 {
-    public const int CurrentVersion = 1;
+    // 2: kinds game/app (was process), track targets as a list, track source.
+    public const int CurrentVersion = 2;
 
     internal static readonly JsonSerializerOptions JsonOptions = new()
     {

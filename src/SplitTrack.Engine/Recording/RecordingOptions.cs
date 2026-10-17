@@ -4,19 +4,27 @@ namespace SplitTrack.Engine.Recording;
 
 public enum AudioTrackKind
 {
-    /// <summary>One process tree, followed across restarts when given by exe name.</summary>
-    Process,
+    /// <summary>The game's process tree, which the System track leaves out. At most one per session.</summary>
+    Game,
 
-    /// <summary>Everything except the game's process tree (everything while no game runs).</summary>
-    System,
+    /// <summary>Another process tree, e.g. Discord.</summary>
+    App,
 
-    /// <summary>A capture device: the default one, or the first whose name contains <see cref="AudioTrackOptions.Target"/>.</summary>
+    /// <summary>A capture device: the default one, or the first present that matches <see cref="AudioTrackOptions.Targets"/>.</summary>
     Microphone,
+
+    /// <summary>Everything except the game's process tree (everything while no game runs). At most one per session.</summary>
+    System,
 }
 
-/// <param name="Target">Process: exe name or PID. Microphone: name filter, or null for the default device.</param>
-/// <param name="IsGame">The process the System track leaves out.</param>
-public sealed record AudioTrackOptions(string Title, AudioTrackKind Kind, string? Target = null, bool IsGame = false);
+/// <param name="Targets">
+/// Game / App: exe names or PIDs; the first one running is captured, and followed across restarts.
+/// Microphone: device name filters; the first one present wins, none means the default device.
+/// </param>
+public sealed record AudioTrackOptions(string Title, AudioTrackKind Kind, IReadOnlyList<string>? Targets = null)
+{
+    public IReadOnlyList<string> Targets { get; init; } = Targets ?? [];
+}
 
 /// <param name="Monitor">Monitor index from <c>CaptureTargets.ListMonitors</c>; used when <paramref name="Window"/> is null.</param>
 /// <param name="Window">Window handle, exe name or title text.</param>

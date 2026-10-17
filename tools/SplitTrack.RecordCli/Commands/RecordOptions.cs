@@ -1,153 +1,173 @@
 using System.Globalization;
-using SplitTrack.Encode.Video;
 using SplitTrack.Engine.Input;
 using SplitTrack.Engine.Recording;
-using SplitTrack.Library;
+using SplitTrack.Engine.Settings;
 
 namespace SplitTrack.RecordCli.Commands;
 
+internal enum CliCommand
+{
+    Record,
+    Replay,
+
+    /// <summary>'settings save': the options change the settings file instead of one run.</summary>
+    SaveSettings,
+}
+
+/// <summary>The settings file with this run's command-line options applied on top.</summary>
 internal sealed class RecordOptions
 {
-    private int? _monitor;
-    private string? _window;
-    private bool _noVideo;
-    private int _fps = 60;
-    private int _bitrateKbps = 20_000;
-    private int? _height;
-    private VideoEncoderKind? _encoder;
-    private bool _cursor = true;
-    private int _adapter;
-    private string? _game;
-    private readonly List<(string Title, string Target)> _apps = [];
-    private bool _mic;
-    private string? _micFilter;
-    private bool _system;
-    private string? _replayOnlyOption;
+    private RecordOptions(CliCommand command, string settingsPath, RecorderSettings settings)
+    {
+        Command = command;
+        SettingsPath = settingsPath;
+        Settings = settings;
+    }
 
-    public int AudioBitrateKbps { get; private set; } = 160;
+    public CliCommand Command { get; }
+
+    public string SettingsPath { get; }
+
+    public bool SettingsFileExists => File.Exists(SettingsPath);
+
+    public RecorderSettings Settings { get; }
 
     public double? Seconds { get; private set; }
 
-    /// <summary>The library folder: recordings, clips and their sidecars.</summary>
-    public string OutputDirectory { get; private set; } = LibraryFolder.DefaultRoot;
-
-    /// <summary>The replay command: keep a buffer and save clips from it.</summary>
-    public bool Replay { get; private set; }
-
-    public double BufferSeconds { get; private set; } = 60;
-
-    public HotkeyGesture Hotkey { get; private set; } = HotkeyGesture.Parse("Alt+F10");
-
-    /// <summary>Replay: also write the whole session to a file.</summary>
-    public bool AlsoRecord { get; private set; }
-
-    public VideoOptions? Video =>
-        _noVideo ? null : new VideoOptions(_monitor ?? 0, _window, _fps, _bitrateKbps, _height, _encoder, _cursor, _adapter);
-
-    /// <summary>Game, apps, Mic, System: the order of the tracks in the file.</summary>
-    public IReadOnlyList<AudioTrackOptions> AudioTracks
+    /// <summary>Loads the settings file (--settings, or the default one) and applies the other options to it.</summary>
+    /// <exception cref="SettingsException">The file is unreadable, or the result is not usable.</exception>
+    public static RecordOptions Parse(string[] args, CliCommand command)
     {
-        get
+        string path = Path.GetFullPath(FindSettingsPath(args) ?? SettingsFile.DefaultPath);
+        var options = new RecordOptions(command, path, SettingsFile.Load(path));
+        options.Apply(args);
+
+        IReadOnlyList<string> errors = options.Settings.Validate();
+        if (errors.Count > 0)
         {
-            var tracks = new List<AudioTrackOptions>();
-            if (_game is not null)
-            {
-                tracks.Add(new AudioTrackOptions("Game", AudioTrackKind.Process, _game, IsGame: true));
-            }
-
-            tracks.AddRange(_apps.Select(a => new AudioTrackOptions(a.Title, AudioTrackKind.Process, a.Target)));
-            if (_mic)
-            {
-                tracks.Add(new AudioTrackOptions("Mic", AudioTrackKind.Microphone, _micFilter));
-            }
-
-            if (_system)
-            {
-                tracks.Add(new AudioTrackOptions("System", AudioTrackKind.System));
-            }
-
-            return tracks;
+            throw new SettingsException(DescribeErrors(path, errors, withCommandLine: args.Length > 0));
         }
+
+        return options;
     }
 
-    /// <param name="replay">Parsing the replay command, which also takes --buffer, --hotkey and --record.</param>
-    public static RecordOptions Parse(string[] args, bool replay)
+    public static string? FindSettingsPath(string[] args)
     {
-        var options = new RecordOptions { Replay = replay };
+        int at = Array.FindIndex(args, a => a.Equals("--settings", StringComparison.OrdinalIgnoreCase));
+        return at < 0 ? null : Value(args, ref at, "--settings");
+    }
+
+    public static string DescribeErrors(string path, IReadOnlyList<string> errors, bool withCommandLine) =>
+        $"These settings cannot be used ({path}{(withCommandLine ? " plus the command line" : string.Empty)}):{Environment.NewLine}" +
+        string.Join(Environment.NewLine, errors.Select(e => $"  {e}"));
+
+    private void Apply(string[] args)
+    {
+        RecorderSettings s = Settings;
+        bool monitor = false, window = false, noVideo = false, noAudio = false;
+        string? replayOnly = null;
+        string? game = null;
+        var apps = new List<TrackSettings>();
+        TrackSettings? mic = null;
+        bool system = false;
+
         for (int i = 0; i < args.Length; i++)
         {
             string arg = args[i];
             switch (arg.ToLowerInvariant())
             {
+                case "--settings":
+                    i++;
+                    break;
                 case "--monitor":
-                    options._monitor = Integer(args, ref i, arg, 0, 63);
+                    monitor = true;
+                    s.Video.Monitor = Integer(args, ref i, arg, Limit.Monitor);
+                    s.Video.Window = null;
+                    s.Video.Enabled = true;
                     break;
                 case "--window":
-                    options._window = Value(args, ref i, arg);
+                    window = true;
+                    s.Video.Window = Value(args, ref i, arg);
+                    s.Video.Enabled = true;
                     break;
                 case "--no-video":
-                    options._noVideo = true;
+                    noVideo = true;
+                    s.Video.Enabled = false;
                     break;
                 case "--fps":
-                    options._fps = Integer(args, ref i, arg, 1, 240);
+                    s.Video.Fps = Integer(args, ref i, arg, Limit.Fps);
                     break;
                 case "--bitrate":
-                    options._bitrateKbps = (int)Math.Round(Number(args, ref i, arg, 0.5, 200) * 1000);
+                    s.Video.BitrateMbps = Number(args, ref i, arg, Limit.BitrateMbps);
                     break;
                 case "--height":
-                    options._height = Integer(args, ref i, arg, 144, 4320);
+                    // 0 undoes a configured height: keep the capture size.
+                    string height = Value(args, ref i, arg);
+                    s.Video.MaxHeight = height == "0" ? null : ParseInteger(height, arg, Limit.MaxHeight);
                     break;
                 case "--encoder":
                     string encoder = Value(args, ref i, arg);
-                    options._encoder = encoder.Equals("auto", StringComparison.OrdinalIgnoreCase)
-                        ? null
-                        : VideoEncoderKinds.Parse(encoder)
-                          ?? throw new UsageException($"Unknown --encoder '{encoder}' (use auto, amf, nvenc, qsv or x264).");
+                    try
+                    {
+                        VideoSettings.ParseEncoder(encoder);
+                    }
+                    catch (FormatException ex)
+                    {
+                        throw new UsageException($"--encoder: {ex.Message}.");
+                    }
+
+                    s.Video.Encoder = encoder.ToLowerInvariant();
+                    break;
+                case "--cursor":
+                    s.Video.Cursor = true;
                     break;
                 case "--no-cursor":
-                    options._cursor = false;
+                    s.Video.Cursor = false;
                     break;
                 case "--adapter":
-                    options._adapter = Integer(args, ref i, arg, 0, 15);
+                    s.Video.Adapter = Integer(args, ref i, arg, Limit.Adapter);
                     break;
                 case "--game":
-                    options._game = options._game is null
-                        ? Value(args, ref i, arg)
-                        : throw new UsageException("--game can only be given once.");
+                    game = game is null ? Value(args, ref i, arg) : throw new UsageException("--game can only be given once.");
                     break;
                 case "--app":
-                    options._apps.Add(ParseApp(Value(args, ref i, arg)));
+                    apps.Add(ParseApp(Value(args, ref i, arg)));
                     break;
                 case "--mic":
-                    options._mic = true;
+                    mic = new TrackSettings { Title = "Mic", Kind = AudioTrackKind.Microphone };
                     if (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
                     {
-                        options._micFilter = args[++i];
+                        mic.Devices = SplitList(args[++i], arg);
                     }
 
                     break;
                 case "--system":
-                    options._system = true;
+                    system = true;
+                    break;
+                case "--no-audio":
+                    noAudio = true;
                     break;
                 case "--audio-bitrate":
-                    options.AudioBitrateKbps = Integer(args, ref i, arg, 32, 512);
+                    s.Audio.BitrateKbps = Integer(args, ref i, arg, Limit.AudioBitrateKbps);
                     break;
                 case "--seconds":
-                    options.Seconds = Number(args, ref i, arg, 0.5, 24 * 3600);
+                    Seconds = Command != CliCommand.SaveSettings
+                        ? Number(args, ref i, arg, new Limit(0.5, 24 * 3600))
+                        : throw new UsageException("--seconds applies to one run, not to the settings file.");
                     break;
                 case "--out":
-                    options.OutputDirectory = Path.GetFullPath(Value(args, ref i, arg));
+                    s.LibraryFolder = Path.GetFullPath(Value(args, ref i, arg));
                     break;
                 case "--buffer":
-                    options._replayOnlyOption ??= arg;
-                    options.BufferSeconds = Number(args, ref i, arg, 5, 600);
+                    replayOnly ??= arg;
+                    s.Replay.BufferSeconds = Number(args, ref i, arg, Limit.BufferSeconds);
                     break;
                 case "--hotkey":
-                    options._replayOnlyOption ??= arg;
+                    replayOnly ??= arg;
                     string hotkey = Value(args, ref i, arg);
                     try
                     {
-                        options.Hotkey = HotkeyGesture.Parse(hotkey);
+                        s.Hotkeys.SaveClip = HotkeyGesture.Parse(hotkey).ToString();
                     }
                     catch (FormatException ex)
                     {
@@ -156,44 +176,63 @@ internal sealed class RecordOptions
 
                     break;
                 case "--record":
-                    options._replayOnlyOption ??= arg;
-                    options.AlsoRecord = true;
+                    replayOnly ??= arg;
+                    s.Replay.AlsoRecord = true;
+                    break;
+                case "--no-record":
+                    replayOnly ??= arg;
+                    s.Replay.AlsoRecord = false;
                     break;
                 default:
                     throw new UsageException($"Unknown option '{arg}'.");
             }
         }
 
-        if (!replay && options._replayOnlyOption is { } replayOnly)
+        if (Command == CliCommand.Record && replayOnly is not null)
         {
             throw new UsageException($"{replayOnly} only applies to the replay command.");
         }
 
-        if (options._monitor is not null && options._window is not null)
+        if (monitor && window)
         {
             throw new UsageException("Use either --monitor or --window, not both.");
         }
 
-        if (options._noVideo && (options._monitor is not null || options._window is not null))
+        if (noVideo && (monitor || window))
         {
             throw new UsageException("--no-video cannot be combined with --monitor or --window.");
         }
 
-        List<string> titles = options.AudioTracks.Select(t => t.Title).ToList();
-        if (titles.Distinct(StringComparer.OrdinalIgnoreCase).Count() != titles.Count)
+        // Any track option replaces the configured tracks, in this order: Game, apps, Mic, System.
+        var tracks = new List<TrackSettings>();
+        if (game is not null)
         {
-            throw new UsageException($"Track titles must be unique: {string.Join(", ", titles)}.");
+            tracks.Add(new TrackSettings { Title = "Game", Kind = AudioTrackKind.Game, Processes = SplitList(game, "--game") });
         }
 
-        if (options._noVideo && titles.Count == 0)
+        tracks.AddRange(apps);
+        if (mic is not null)
         {
-            throw new UsageException("Nothing to record: --no-video needs at least one of --game, --app, --mic or --system.");
+            tracks.Add(mic);
         }
 
-        return options;
+        if (system)
+        {
+            tracks.Add(new TrackSettings { Title = "System", Kind = AudioTrackKind.System });
+        }
+
+        if (noAudio && tracks.Count > 0)
+        {
+            throw new UsageException("--no-audio cannot be combined with --game, --app, --mic or --system.");
+        }
+
+        if (noAudio || tracks.Count > 0)
+        {
+            s.Audio.Tracks = tracks;
+        }
     }
 
-    private static (string Title, string Target) ParseApp(string spec)
+    private static TrackSettings ParseApp(string spec)
     {
         int equals = spec.IndexOf('=');
         if (equals <= 0 || equals == spec.Length - 1)
@@ -201,7 +240,19 @@ internal sealed class RecordOptions
             throw new UsageException($"--app needs <Title>=<exe|pid>, e.g. --app Discord=Discord.exe; got '{spec}'.");
         }
 
-        return (spec[..equals].Trim(), spec[(equals + 1)..].Trim());
+        return new TrackSettings
+        {
+            Title = spec[..equals].Trim(),
+            Kind = AudioTrackKind.App,
+            Processes = SplitList(spec[(equals + 1)..], "--app"),
+        };
+    }
+
+    /// <summary>"a.exe, b.exe" → [a.exe, b.exe].</summary>
+    private static List<string> SplitList(string text, string option)
+    {
+        List<string> items = text.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList();
+        return items.Count > 0 ? items : throw new UsageException($"{option} needs a value, got '{text}'.");
     }
 
     private static string Value(string[] args, ref int i, string option) =>
@@ -209,19 +260,18 @@ internal sealed class RecordOptions
             ? args[++i]
             : throw new UsageException($"{option} needs a value.");
 
-    private static double Number(string[] args, ref int i, string option, double min, double max)
+    private static double Number(string[] args, ref int i, string option, Limit limit)
     {
         string text = Value(args, ref i, option);
-        return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value) && value >= min && value <= max
+        return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value) && limit.Contains(value)
             ? value
-            : throw new UsageException($"{option} needs a number from {min} to {max}, got '{text}'.");
+            : throw new UsageException(string.Create(CultureInfo.InvariantCulture, $"{option} needs a number from {limit.Min} to {limit.Max}, got '{text}'."));
     }
 
-    private static int Integer(string[] args, ref int i, string option, int min, int max)
-    {
-        string text = Value(args, ref i, option);
-        return int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value) && value >= min && value <= max
+    private static int Integer(string[] args, ref int i, string option, Limit limit) => ParseInteger(Value(args, ref i, option), option, limit);
+
+    private static int ParseInteger(string text, string option, Limit limit) =>
+        int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value) && limit.Contains(value)
             ? value
-            : throw new UsageException($"{option} needs a whole number from {min} to {max}, got '{text}'.");
-    }
+            : throw new UsageException($"{option} needs a whole number from {limit.Min} to {limit.Max}, got '{text}'.");
 }

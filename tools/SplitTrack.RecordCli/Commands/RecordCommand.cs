@@ -6,6 +6,7 @@ using SplitTrack.Common.Time;
 using SplitTrack.Engine.Input;
 using SplitTrack.Engine.Recording;
 using SplitTrack.Engine.Replay;
+using SplitTrack.Engine.Settings;
 using SplitTrack.Engine.Video;
 using SplitTrack.Library;
 
@@ -17,24 +18,21 @@ internal static class RecordCommand
 
     public static int Run(RecordOptions options)
     {
-        var library = new LibraryFolder(options.OutputDirectory);
-        string? path = !options.Replay || options.AlsoRecord ? library.NewEntry(DateTime.Now, "rec").Video : null;
-        var recording = new RecordingOptions(
-            path,
-            options.Video,
-            options.AudioTracks,
-            options.AudioBitrateKbps,
-            options.Replay ? new ReplayOptions(options.BufferSeconds, library.Root) : null);
+        RecorderSettings settings = options.Settings;
+        bool replay = options.Command == CliCommand.Replay;
+        var library = new LibraryFolder(settings.LibraryRoot);
+        string? path = !replay || settings.Replay.AlsoRecord ? library.NewEntry(DateTime.Now, "rec").Video : null;
+        RecordingOptions recording = settings.ToRecordingOptions(path, replay);
 
         // Registered first: a hotkey another program owns should fail before capture starts.
         RecordingSession? session = null;
-        using GlobalHotkey? hotkey = options.Replay ? GlobalHotkey.Register(options.Hotkey, qpc => session?.SaveClip(qpc)) : null;
+        using GlobalHotkey? hotkey = replay ? GlobalHotkey.Register(settings.Hotkeys.SaveClipGesture, qpc => session?.SaveClip(qpc)) : null;
 
         var clips = new ConcurrentQueue<ClipResult>();
         using (session = RecordingSession.Open(recording))
         {
             session.ClipSaved += clips.Enqueue;
-            PrintPlan(session, recording, hotkey?.Gesture, library);
+            PrintPlan(session, recording, hotkey?.Gesture, library, options);
             session.Start();
 
             long? limitQpc = options.Seconds is { } s ? session.StartQpc + (long)(s * QpcClock.TicksPerSecond) : null;
@@ -53,15 +51,20 @@ internal static class RecordCommand
         }
     }
 
-    private static void PrintPlan(RecordingSession session, RecordingOptions recording, HotkeyGesture? hotkey, LibraryFolder library)
+    private static void PrintPlan(
+        RecordingSession session, RecordingOptions recording, HotkeyGesture? hotkey, LibraryFolder library, RecordOptions options)
     {
+        Console.WriteLine($"Settings: {options.SettingsPath}{(options.SettingsFileExists ? string.Empty : " (not saved yet: defaults)")}");
         Console.WriteLine(session.VideoDescription is { } video ? $"Video: {video}" : "Video: none");
         foreach (AudioTrackOptions track in recording.AudioTracks)
         {
             string what = track.Kind switch
             {
-                AudioTrackKind.Process => $"process tree of {track.Target}{(track.IsGame ? " (the game)" : string.Empty)}",
-                AudioTrackKind.Microphone => track.Target is null ? "default microphone" : $"microphone matching '{track.Target}'",
+                AudioTrackKind.Game => $"process tree of {string.Join(" or ", track.Targets)} (the game)",
+                AudioTrackKind.App => $"process tree of {string.Join(" or ", track.Targets)}",
+                AudioTrackKind.Microphone => track.Targets.Count == 0
+                    ? "default microphone"
+                    : $"first microphone matching {string.Join(" or ", track.Targets.Select(t => $"'{t}'"))}",
                 _ => "everything except the game",
             };
             Console.WriteLine($"Audio: {track.Title,-10} {what}, AAC {recording.AudioBitrateKbps} kbps");

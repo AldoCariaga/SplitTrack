@@ -4,10 +4,11 @@ A Windows game recorder that keeps **one audio track per source** (game, Discord
 you can choose later which ones end up in the exported clip. Per-app audio comes from WASAPI
 process loopback, so no virtual audio cables are needed.
 
-Status: **Milestone 4, replay buffer and library** (`tools/SplitTrack.RecordCli`): one MKV with
-video and one named AAC track per audio source, either recorded whole or kept as a replay buffer
-that a hotkey saves clips from; every file gets a JSON sidecar and a thumbnail. The milestone 1 and
-2 proofs of concept (`tools/SplitTrack.AudioPoc`, `tools/SplitTrack.VideoPoc`) are still there.
+Status: **Milestone 5, settings** (`tools/SplitTrack.RecordCli`): one MKV with video and one
+named AAC track per audio source, either recorded whole or kept as a replay buffer that a hotkey
+saves clips from; every file gets a JSON sidecar and a thumbnail. What to record comes from
+`settings.json`, which command-line options override per run. The milestone 1 and 2 proofs of
+concept (`tools/SplitTrack.AudioPoc`, `tools/SplitTrack.VideoPoc`) are still there.
 
 ## Requirements
 
@@ -37,6 +38,7 @@ dotnet publish tools\SplitTrack.VideoPoc -c Release -o out\video-poc
 dotnet run --project tools\SplitTrack.RecordCli -c Release -- list
 dotnet run --project tools\SplitTrack.RecordCli -c Release -- record --game msedge.exe --mic --system --seconds 15 --out C:\Temp\poc
 dotnet run --project tools\SplitTrack.RecordCli -c Release -- replay --game msedge.exe --mic --system --buffer 30 --out C:\Temp\poc
+dotnet run --project tools\SplitTrack.RecordCli -c Release -- settings
 dotnet publish tools\SplitTrack.RecordCli -c Release -o out\record-cli
 ```
 
@@ -50,22 +52,77 @@ next to it (about 185 MB together); the same goes for `out\record-cli\SplitTrack
 SplitTrack.RecordCli list
 SplitTrack.RecordCli record [--monitor <n> | --window <hwnd|exe|title text> | --no-video]
                             [--fps 60] [--bitrate <Mbps, 20>] [--height <px>] [--encoder auto|amf|nvenc|qsv|x264]
-                            [--no-cursor] [--adapter <n>]
-                            [--game <exe|pid>] [--app <Title>=<exe|pid>]... [--mic [name]] [--system]
-                            [--audio-bitrate <kbps, 160>] [--seconds <n>] [--out <dir>]
-SplitTrack.RecordCli replay [same options as record] [--buffer <s, 60>] [--hotkey <keys, Alt+F10>] [--record]
+                            [--cursor | --no-cursor] [--adapter <n>]
+                            [--game <exe[,exe...]>] [--app <Title>=<exe[,exe...]>]... [--mic [name[,name...]]]
+                            [--system] [--no-audio] [--audio-bitrate <kbps, 160>]
+                            [--seconds <n>] [--out <dir>] [--settings <file>]
+SplitTrack.RecordCli replay [same options as record] [--buffer <s, 60>] [--hotkey <keys, Alt+F10>] [--record | --no-record]
+SplitTrack.RecordCli settings [--settings <file>]
+SplitTrack.RecordCli settings save [options of record and replay, except --seconds]
 ```
 
-Files go to the library folder, `Videos\SplitTrack` unless `--out` says otherwise. `record` writes
-`<ts>_rec.mkv`: the video as in VideoPoc, then one AAC track (48 kHz stereo) per audio option,
-titled and ordered like this:
+### Settings
 
-| Option | Track title | What it records |
+`record` and `replay` start from `%LOCALAPPDATA%\SplitTrack\settings.json` (or `--settings <file>`);
+options on the command line override it for that run only. Without a file the defaults apply:
+primary monitor at 60 fps and 20 Mbps, encoder auto, tracks Mic and System, a 60 s buffer, Alt+F10.
+`settings` prints what is in effect; `settings save <options>` writes options into the file, e.g.
+
+```
+SplitTrack.RecordCli settings save --game VALORANT-Win64-Shipping.exe,cs2.exe --app Discord=Discord.exe --mic --system --hotkey Ctrl+Shift+F8
+SplitTrack.RecordCli replay
+```
+
+The file can also be edited by hand (comments and trailing commas are fine; unknown keys and
+out-of-range values are reported with their line and name):
+
+```jsonc
+{
+  "version": 1,
+  "libraryFolder": null,                 // null: Videos\SplitTrack
+  "video": {
+    "enabled": true,                     // false: audio only
+    "monitor": 0,
+    "window": null,                      // window handle, exe or title text instead of the monitor
+    "fps": 60,
+    "bitrateMbps": 20,
+    "maxHeight": null,                   // e.g. 1080 to scale a 1440p monitor down
+    "encoder": "auto",                   // auto, amf, nvenc, qsv, x264
+    "cursor": true,
+    "adapter": 0
+  },
+  "audio": {
+    "bitrateKbps": 160,
+    "tracks": [                          // in this order in the file
+      { "title": "Game", "kind": "game", "processes": ["VALORANT-Win64-Shipping.exe", "cs2.exe"] },
+      { "title": "Discord", "kind": "app", "processes": ["Discord.exe"] },
+      { "title": "Mic", "kind": "microphone", "devices": ["Tamago"] },   // no devices: default mic
+      { "title": "System", "kind": "system" }
+    ]
+  },
+  "replay": { "bufferSeconds": 60, "alsoRecord": false },
+  "hotkeys": { "saveClip": "Alt+F10" }
+}
+```
+
+On the command line, any of `--game`, `--app`, `--mic`, `--system` and `--no-audio` replaces the
+whole track list (in the order Game, apps, Mic, System); the other options change one value each.
+
+### Tracks
+
+Files go to the library folder, `Videos\SplitTrack` unless the settings or `--out` say otherwise.
+`record` writes `<ts>_rec.mkv`: the video as in VideoPoc, then one AAC track (48 kHz stereo) per
+audio track:
+
+| Kind (option) | Track title | What it records |
 |---|---|---|
-| `--game X` | `Game` | Process tree X. It may start after the recording and restart during it |
-| `--app Title=X` (repeatable) | `Title` | Process tree X, same rules, e.g. `--app Discord=Discord.exe` |
-| `--mic [name]` | `Mic` | Default microphone (or first name match); follows device changes and replugs |
-| `--system` | `System` | Everything except the game (everything while no game runs) |
+| `game` (`--game X,Y`) | `Game` | The first of the process trees X, Y that is running. It may start after the recording and restart during it. At most one |
+| `app` (`--app Title=X`, repeatable) | `Title` | Same rules, e.g. `--app Discord=Discord.exe` |
+| `microphone` (`--mic [name,...]`) | `Mic` | Default microphone, or the first present whose name contains one of the names; follows device changes and replugs |
+| `system` (`--system`) | `System` | Everything except the game (everything while no game runs). At most one |
+
+A process list is tried in order only while nothing is captured: a running game is kept even if
+one earlier in the list starts later.
 
 All tracks start and end on the same instant; a track whose source is quiet, absent or restarting
 is filled with silence. Each source's clock is gently resampled to the recording clock, so long
@@ -82,8 +139,9 @@ a 60 s buffer gives clips of 60–61 s). Presses in quick succession give overla
 hotkey (NVIDIA's Instant Replay uses Alt+F10), `replay` says so and exits; pick another with
 `--hotkey`, e.g. `--hotkey Ctrl+Shift+F8`.
 
-Next to each video there is `<name>.json`, a sidecar with what the file holds (length, game, video
-settings, the audio tracks with their titles and stream numbers), and `<name>.jpg`, a 320 px
+Next to each video there is `<name>.json`, a sidecar with what the file holds (length, the game
+exe that was captured, video settings, the audio tracks with their titles, stream numbers, kinds,
+configured targets and the exe or device last captured), and `<name>.jpg`, a 320 px
 thumbnail of the middle of the video. The sidecar is written last, so a video without one is an
 interrupted save.
 
@@ -176,7 +234,7 @@ If a player refuses the float WAVs, rerun with `--format pcm44`.
 ## Layout
 
 ```
-src/SplitTrack.Common    QPC clock, precise timer, logging, console status, Windows version gate, AudioFormat, peak meter
+src/SplitTrack.Common    QPC clock, precise timer, logging, app data paths, console status, Windows version gate, AudioFormat, peak meter
 src/SplitTrack.Capture   Audio: WASAPI sources, device watcher, session scanner, aligner. Video: D3D11 device, Windows Graphics Capture
 src/SplitTrack.FFmpeg    FFmpeg loading and logging, packet and stream helpers
 src/SplitTrack.Encode    GPU BGRA→NV12 conversion, H.264 encoder (AMF / NVENC / QSV / x264), resampler, AAC encoder
@@ -184,7 +242,7 @@ src/SplitTrack.Mux       WAV writer, MKV writer
 src/SplitTrack.Buffer    Replay buffer: the last seconds of encoded packets, cut into keyframe-aligned clips
 src/SplitTrack.Library   Library folder naming, JSON sidecars, thumbnails
 src/SplitTrack.Engine    Capture session: video loop, audio tracks, source watcher (process restarts, device changes),
-                         packet routing to file and replay buffer, clip saving, global hotkey
+                         packet routing to file and replay buffer, clip saving, global hotkey, settings.json
 tools/SplitTrack.AudioPoc
 tools/SplitTrack.VideoPoc
 tools/SplitTrack.RecordCli
