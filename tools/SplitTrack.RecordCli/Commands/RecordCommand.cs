@@ -80,9 +80,14 @@ internal static class RecordCommand
         {
             while (QpcClock.Now < session.EndQpc)
             {
-                if (stop.Wait(50) || session.VideoStopped ||
-                    (readKeys && Console.KeyAvailable && Console.ReadKey(intercept: true).Key == ConsoleKey.Enter))
+                string? reason = stop.Wait(50) ? "Ctrl+C"
+                    : session.VideoClosed ? "captured window closed"
+                    : session.VideoStopped ? "video encoding failed"
+                    : readKeys && Console.KeyAvailable && Console.ReadKey(intercept: true).Key == ConsoleKey.Enter ? "Enter"
+                    : null;
+                if (reason is not null)
                 {
+                    Log.Info($"Stop requested: {reason}");
                     session.StopSoon();
                     return;
                 }
@@ -96,6 +101,8 @@ internal static class RecordCommand
                     previous = status;
                 }
             }
+
+            Log.Info("Stop: --seconds limit reached");
         }
         finally
         {
