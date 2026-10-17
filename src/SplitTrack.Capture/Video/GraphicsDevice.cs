@@ -105,7 +105,8 @@ public sealed class GraphicsDevice : IDisposable
             index,
             desc.Description.TrimEnd('\0'),
             desc.VendorId,
-            (long)desc.DedicatedVideoMemory,
+            // Via ulong: a plain (long) cast picks SharpGen's checked uint conversion, which throws above 4 GB.
+            (long)(ulong)desc.DedicatedVideoMemory,
             (desc.Flags & AdapterFlags.Software) != 0);
     }
 }
