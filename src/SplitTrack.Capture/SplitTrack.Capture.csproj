@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <PackageReference Include="Microsoft.Windows.CsWin32" PrivateAssets="all" />
+    <PackageReference Include="Vortice.Direct3D11" />
+    <PackageReference Include="Vortice.DXGI" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\SplitTrack.Common\SplitTrack.Common.csproj" />

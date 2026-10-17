@@ -45,3 +45,22 @@ Process32NextW
 OpenProcess
 QueryFullProcessImageName
 GetProcessTimes
+
+// Monitors and windows (video capture targets)
+EnumDisplayMonitors
+GetMonitorInfo
+IsWindow
+MONITORINFOEXW
+MONITORINFOF_PRIMARY
+EnumWindows
+IsWindowVisible
+IsIconic
+GetWindowText
+GetWindowTextLength
+GetWindowThreadProcessId
+GetWindow
+GetWindowLongPtr
+WINDOW_EX_STYLE
+GetClientRect
+DwmGetWindowAttribute
+DWMWINDOWATTRIBUTE

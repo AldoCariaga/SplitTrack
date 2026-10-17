@@ -7,6 +7,9 @@ obj/
 out/
 artifacts/
 
+# Downloaded by tools/get-ffmpeg.ps1
+third_party/
+
 # IDE
 .vs/
 .vscode/

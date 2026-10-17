@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Vortice.Direct3D11" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SplitTrack.FFmpeg\SplitTrack.FFmpeg.csproj" />
+  </ItemGroup>
+</Project>

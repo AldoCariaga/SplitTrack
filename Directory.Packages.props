@@ -1,5 +1,9 @@
 <Project>
   <ItemGroup>
     <PackageVersion Include="Microsoft.Windows.CsWin32" Version="0.3.363" />
+    <!-- Major.minor must equal the FFmpeg DLLs from tools\get-ffmpeg.ps1. -->
+    <PackageVersion Include="FFmpeg.AutoGen" Version="9.0.1.1" />
+    <PackageVersion Include="Vortice.Direct3D11" Version="3.8.3" />
+    <PackageVersion Include="Vortice.DXGI" Version="3.8.3" />
   </ItemGroup>
 </Project>
