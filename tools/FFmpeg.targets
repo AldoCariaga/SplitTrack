@@ -5,8 +5,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Only what libavcodec, libavformat and libswresample load; avfilter and avdevice (42 MB) are unused. -->
-    <None Include="$(FFmpegDir)avcodec-*.dll;$(FFmpegDir)avformat-*.dll;$(FFmpegDir)avutil-*.dll;$(FFmpegDir)swresample-*.dll"
+    <!-- Only what libavcodec, libavformat and libswresample load (avfilter and avdevice are 42 MB), plus the licence. -->
+    <None Include="$(FFmpegDir)avcodec-*.dll;$(FFmpegDir)avformat-*.dll;$(FFmpegDir)avutil-*.dll;$(FFmpegDir)swresample-*.dll;$(FFmpegDir)LICENSE.txt"
+          Link="ffmpeg\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+
+  <!-- Set FFmpegExe to true for tools that run ffmpeg.exe (export); it also loads avfilter, avdevice and swscale. -->
+  <ItemGroup Condition="'$(FFmpegExe)' == 'true'">
+    <None Include="$(FFmpegDir)ffmpeg.exe;$(FFmpegDir)avfilter-*.dll;$(FFmpegDir)avdevice-*.dll;$(FFmpegDir)swscale-*.dll"
           Link="ffmpeg\%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
   </ItemGroup>

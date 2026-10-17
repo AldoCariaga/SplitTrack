@@ -4,10 +4,12 @@ A Windows game recorder that keeps **one audio track per source** (game, Discord
 you can choose later which ones end up in the exported clip. Per-app audio comes from WASAPI
 process loopback, so no virtual audio cables are needed.
 
-Status: **Milestone 5, settings** (`tools/SplitTrack.RecordCli`): one MKV with video and one
-named AAC track per audio source, either recorded whole or kept as a replay buffer that a hotkey
-saves clips from; every file gets a JSON sidecar and a thumbnail. What to record comes from
-`settings.json`, which command-line options override per run. The milestone 1 and 2 proofs of
+Status: **Milestone 6, export** (`tools/SplitTrack.ExportCli`): turns a recording or clip into a
+plain MP4 with the chosen tracks mixed at chosen volumes, optionally cut and kept under a size
+limit. Recording is `tools/SplitTrack.RecordCli`: one MKV with video and one named AAC track per
+audio source, either recorded whole or kept as a replay buffer that a hotkey saves clips from;
+every file gets a JSON sidecar and a thumbnail. What to record comes from `settings.json`, which
+command-line options override per run. The milestone 1 and 2 proofs of
 concept (`tools/SplitTrack.AudioPoc`, `tools/SplitTrack.VideoPoc`) are still there.
 
 ## Requirements
@@ -40,11 +42,17 @@ dotnet run --project tools\SplitTrack.RecordCli -c Release -- record --game msed
 dotnet run --project tools\SplitTrack.RecordCli -c Release -- replay --game msedge.exe --mic --system --buffer 30 --out C:\Temp\poc
 dotnet run --project tools\SplitTrack.RecordCli -c Release -- settings
 dotnet publish tools\SplitTrack.RecordCli -c Release -o out\record-cli
+
+dotnet run --project tools\SplitTrack.ExportCli -c Release -- info C:\Temp\poc\<name>_rec.mkv
+dotnet run --project tools\SplitTrack.ExportCli -c Release -- export C:\Temp\poc\<name>_rec.mkv --tracks Game,Mic
+dotnet publish tools\SplitTrack.ExportCli -c Release -o out\export-cli
 ```
 
 `out\audio-poc\SplitTrack.AudioPoc.exe` (about 45 MB, self-contained) is the only file to copy to
 another PC. For video, copy `out\video-poc\SplitTrack.VideoPoc.exe` **and** the `ffmpeg` folder
 next to it (about 185 MB together); the same goes for `out\record-cli\SplitTrack.RecordCli.exe`.
+`out\export-cli\SplitTrack.ExportCli.exe` needs its `ffmpeg` folder too, which there also holds
+`ffmpeg.exe` and the DLLs it loads (about 225 MB together).
 
 ## RecordCli commands
 
@@ -145,6 +153,43 @@ configured targets and the exe or device last captured), and `<name>.jpg`, a 320
 thumbnail of the middle of the video. The sidecar is written last, so a video without one is an
 interrupted save.
 
+## ExportCli commands
+
+```
+SplitTrack.ExportCli info <file>
+SplitTrack.ExportCli export <file> [--tracks <title|n>[=<volume %>][,...] | --no-audio] [--audio-bitrate <kbps, 160>]
+                                   [--from <time>] [--to <time>] [--precise]
+                                   [--size <MB>] [--height <px>] [--bitrate <Mbps>] [--reencode]
+                                   [--encoder auto|amf|nvenc|qsv|x264] [--out <file|dir>] [--overwrite]
+SplitTrack.ExportCli encoders
+```
+
+`<file>` is a recording's `.mkv` or its `.json` sidecar. `info` lists the audio tracks with their
+number, title, kind and what they captured. `export` writes `<name>.mp4` next to the source (or
+`--out`): H.264 video and **one** AAC track (48 kHz stereo) that mixes the tracks named in
+`--tracks` (all of them by default), each at its volume, e.g. `--tracks Game,Discord=80,Mic=150`.
+The mix is a plain sum, so a track at 100 % sounds as loud as in the recording; a limiter stops
+the sum from clipping. The moov box is at the front, so the file starts playing while it downloads
+(Discord, browsers, phones). An audio-only recording becomes `<name>.m4a`.
+
+The video is **copied** as recorded unless something needs a re-encode, so most exports take a
+second or two and lose nothing:
+
+| Option | Effect |
+|---|---|
+| `--from` / `--to` | The part to export: seconds (`75.5`) or `m:ss` / `h:mm:ss` (`1:15.5`). A copy starts on the keyframe at or before `--from`, at most 1 s earlier |
+| `--precise` | Start exactly at `--from`; re-encodes the video when `--from` is not on a keyframe |
+| `--size <MB>` | Keep the file at or under this many MB (1,000,000 bytes), e.g. `--size 10` for Discord without Nitro. Copies if that fits, otherwise re-encodes at the bitrate that fits (and tries again lower if it came out too big) |
+| `--height <px>` | Scale down, e.g. `--height 720`; re-encodes |
+| `--bitrate <Mbps>` | Video bitrate of a re-encode (default: the recording's, per pixel) |
+| `--reencode` | Re-encode even if nothing else asks for it |
+| `--encoder` | Encoder for a re-encode. `auto` takes the first GPU encoder that works (AMF, NVENC, QSV), else x264; with `--size` it takes x264, whose rate control lands on target (GPU encoders stop at a quality floor at low bitrates) |
+
+Audio stays in sync to the sample however the file is cut. `System` records everything except the
+game, so it also contains Discord: when both are chosen and Discord was captured, `export` says
+so. Ctrl+C cancels and removes the unfinished file. `encoders` shows which encoders work for
+re-encoding on this PC.
+
 ## AudioPoc commands
 
 ```
@@ -243,10 +288,12 @@ src/SplitTrack.Buffer    Replay buffer: the last seconds of encoded packets, cut
 src/SplitTrack.Library   Library folder naming, JSON sidecars, thumbnails
 src/SplitTrack.Engine    Capture session: video loop, audio tracks, source watcher (process restarts, device changes),
                          packet routing to file and replay buffer, clip saving, global hotkey, settings.json
+src/SplitTrack.Export    Export to MP4: track mix, keyframe or exact cut, size limit; runs ffmpeg.exe
 tools/SplitTrack.AudioPoc
 tools/SplitTrack.VideoPoc
 tools/SplitTrack.RecordCli
-tools/FFmpeg.targets     Copies the FFmpeg DLLs next to the video tools
+tools/SplitTrack.ExportCli
+tools/FFmpeg.targets     Copies the FFmpeg DLLs (and ffmpeg.exe for export) next to the video tools
 tools/get-ffmpeg.ps1
 ```
 

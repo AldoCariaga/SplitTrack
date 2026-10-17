@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>SplitTrack.ExportCli</AssemblyName>
+    <RootNamespace>SplitTrack.ExportCli</RootNamespace>
+    <FFmpegExe>true</FFmpegExe>
+  </PropertyGroup>
+
+  <!-- `dotnet publish` gives one exe that runs on a PC without .NET installed; ffmpeg.exe and its DLLs sit next to it. -->
+  <PropertyGroup>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <Import Project="..\FFmpeg.targets" />
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SplitTrack.Export\SplitTrack.Export.csproj" />
+  </ItemGroup>
+</Project>
