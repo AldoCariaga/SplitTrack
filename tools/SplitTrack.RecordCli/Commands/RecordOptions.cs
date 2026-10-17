@@ -1,6 +1,8 @@
 using System.Globalization;
 using SplitTrack.Encode.Video;
+using SplitTrack.Engine.Input;
 using SplitTrack.Engine.Recording;
+using SplitTrack.Library;
 
 namespace SplitTrack.RecordCli.Commands;
 
@@ -20,12 +22,24 @@ internal sealed class RecordOptions
     private bool _mic;
     private string? _micFilter;
     private bool _system;
+    private string? _replayOnlyOption;
 
     public int AudioBitrateKbps { get; private set; } = 160;
 
     public double? Seconds { get; private set; }
 
-    public string OutputDirectory { get; private set; } = Environment.CurrentDirectory;
+    /// <summary>The library folder: recordings, clips and their sidecars.</summary>
+    public string OutputDirectory { get; private set; } = LibraryFolder.DefaultRoot;
+
+    /// <summary>The replay command: keep a buffer and save clips from it.</summary>
+    public bool Replay { get; private set; }
+
+    public double BufferSeconds { get; private set; } = 60;
+
+    public HotkeyGesture Hotkey { get; private set; } = HotkeyGesture.Parse("Alt+F10");
+
+    /// <summary>Replay: also write the whole session to a file.</summary>
+    public bool AlsoRecord { get; private set; }
 
     public VideoOptions? Video =>
         _noVideo ? null : new VideoOptions(_monitor ?? 0, _window, _fps, _bitrateKbps, _height, _encoder, _cursor, _adapter);
@@ -56,9 +70,10 @@ internal sealed class RecordOptions
         }
     }
 
-    public static RecordOptions Parse(string[] args)
+    /// <param name="replay">Parsing the replay command, which also takes --buffer, --hotkey and --record.</param>
+    public static RecordOptions Parse(string[] args, bool replay)
     {
-        var options = new RecordOptions();
+        var options = new RecordOptions { Replay = replay };
         for (int i = 0; i < args.Length; i++)
         {
             string arg = args[i];
@@ -123,9 +138,35 @@ internal sealed class RecordOptions
                 case "--out":
                     options.OutputDirectory = Path.GetFullPath(Value(args, ref i, arg));
                     break;
+                case "--buffer":
+                    options._replayOnlyOption ??= arg;
+                    options.BufferSeconds = Number(args, ref i, arg, 5, 600);
+                    break;
+                case "--hotkey":
+                    options._replayOnlyOption ??= arg;
+                    string hotkey = Value(args, ref i, arg);
+                    try
+                    {
+                        options.Hotkey = HotkeyGesture.Parse(hotkey);
+                    }
+                    catch (FormatException ex)
+                    {
+                        throw new UsageException($"--hotkey: {ex.Message}");
+                    }
+
+                    break;
+                case "--record":
+                    options._replayOnlyOption ??= arg;
+                    options.AlsoRecord = true;
+                    break;
                 default:
                     throw new UsageException($"Unknown option '{arg}'.");
             }
+        }
+
+        if (!replay && options._replayOnlyOption is { } replayOnly)
+        {
+            throw new UsageException($"{replayOnly} only applies to the replay command.");
         }
 
         if (options._monitor is not null && options._window is not null)

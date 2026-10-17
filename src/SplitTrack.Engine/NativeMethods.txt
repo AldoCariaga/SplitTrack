@@ -1,0 +1,10 @@
+// Global hotkey on a message-loop thread
+RegisterHotKey
+UnregisterHotKey
+GetMessage
+PeekMessage
+PostThreadMessage
+GetCurrentThreadId
+HOT_KEY_MODIFIERS
+WM_HOTKEY
+WM_QUIT

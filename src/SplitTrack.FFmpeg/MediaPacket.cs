@@ -38,6 +38,47 @@ public sealed unsafe class MediaPacket : IDisposable
         return new MediaPacket(packet, timeBase);
     }
 
+    /// <summary>A second packet sharing this one's data (reference counted, no copy) with its own timestamps.</summary>
+    public MediaPacket Clone()
+    {
+        AVPacket* packet = ffmpeg.av_packet_clone(Native);
+        if (packet == null)
+        {
+            throw new OutOfMemoryException("av_packet_clone failed.");
+        }
+
+        return new MediaPacket(packet, TimeBase);
+    }
+
+    /// <summary>
+    /// Moves the data into a buffer of its own size when the current one is much larger. Some
+    /// encoders (QSV) hand out packets in a worst-case-sized buffer, megabytes per frame; harmless
+    /// when written at once, but held in a replay buffer it commits gigabytes.
+    /// </summary>
+    /// <returns>True if the data was copied.</returns>
+    public bool ShrinkToFit()
+    {
+        AVPacket* packet = Native;
+        if (packet->buf == null || (ulong)packet->buf->size < (2 * (ulong)packet->size) + 4096)
+        {
+            return false;
+        }
+
+        // FFmpeg requires zeroed padding after packet data.
+        AVBufferRef* fitted = ffmpeg.av_buffer_alloc((ulong)(packet->size + ffmpeg.AV_INPUT_BUFFER_PADDING_SIZE));
+        if (fitted == null)
+        {
+            throw new OutOfMemoryException("av_buffer_alloc failed.");
+        }
+
+        Buffer.MemoryCopy(packet->data, fitted->data, packet->size, packet->size);
+        new Span<byte>(fitted->data + packet->size, ffmpeg.AV_INPUT_BUFFER_PADDING_SIZE).Clear();
+        ffmpeg.av_buffer_unref(&packet->buf);
+        packet->buf = fitted;
+        packet->data = fitted->data;
+        return true;
+    }
+
     public void Dispose()
     {
         Free();

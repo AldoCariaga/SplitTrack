@@ -1,9 +1,13 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using SplitTrack.Capture.Audio.Timeline;
 using SplitTrack.Common.Diagnostics;
 using SplitTrack.Common.Time;
+using SplitTrack.Engine.Input;
 using SplitTrack.Engine.Recording;
+using SplitTrack.Engine.Replay;
 using SplitTrack.Engine.Video;
+using SplitTrack.Library;
 
 namespace SplitTrack.RecordCli.Commands;
 
@@ -13,30 +17,43 @@ internal static class RecordCommand
 
     public static int Run(RecordOptions options)
     {
-        Directory.CreateDirectory(options.OutputDirectory);
-        string path = Path.Combine(options.OutputDirectory, $"{DateTime.Now:yyyyMMdd_HHmmss}.mkv");
-        var recording = new RecordingOptions(path, options.Video, options.AudioTracks, options.AudioBitrateKbps);
+        var library = new LibraryFolder(options.OutputDirectory);
+        string? path = !options.Replay || options.AlsoRecord ? library.NewEntry(DateTime.Now, "rec").Video : null;
+        var recording = new RecordingOptions(
+            path,
+            options.Video,
+            options.AudioTracks,
+            options.AudioBitrateKbps,
+            options.Replay ? new ReplayOptions(options.BufferSeconds, library.Root) : null);
 
-        using RecordingSession session = RecordingSession.Open(recording);
-        PrintPlan(session, recording);
-        session.Start();
+        // Registered first: a hotkey another program owns should fail before capture starts.
+        RecordingSession? session = null;
+        using GlobalHotkey? hotkey = options.Replay ? GlobalHotkey.Register(options.Hotkey, qpc => session?.SaveClip(qpc)) : null;
 
-        long? limitQpc = options.Seconds is { } s ? session.StartQpc + (long)(s * QpcClock.TicksPerSecond) : null;
-        if (limitQpc is { } limit)
+        var clips = new ConcurrentQueue<ClipResult>();
+        using (session = RecordingSession.Open(recording))
         {
-            session.StopAt(limit);
+            session.ClipSaved += clips.Enqueue;
+            PrintPlan(session, recording, hotkey?.Gesture, library);
+            session.Start();
+
+            long? limitQpc = options.Seconds is { } s ? session.StartQpc + (long)(s * QpcClock.TicksPerSecond) : null;
+            if (limitQpc is { } limit)
+            {
+                session.StopAt(limit);
+            }
+
+            WaitForStop(session, limitQpc, clips);
+            session.Complete();
+
+            SessionStatus status = session.GetStatus();
+            PrintSummary(session, status, clips.ToList());
+            bool failed = status.WriteError is not null || status.Video?.Fault is not null || clips.Any(c => c.Error is not null);
+            return failed ? 3 : 0;
         }
-
-        WaitForStop(session, limitQpc);
-        session.Complete();
-
-        SessionStatus status = session.GetStatus();
-        PrintSummary(session, status);
-        bool failed = status.WriteError is not null || status.Video?.Fault is not null;
-        return failed ? 3 : 0;
     }
 
-    private static void PrintPlan(RecordingSession session, RecordingOptions recording)
+    private static void PrintPlan(RecordingSession session, RecordingOptions recording, HotkeyGesture? hotkey, LibraryFolder library)
     {
         Console.WriteLine(session.VideoDescription is { } video ? $"Video: {video}" : "Video: none");
         foreach (AudioTrackOptions track in recording.AudioTracks)
@@ -50,11 +67,21 @@ internal static class RecordCommand
             Console.WriteLine($"Audio: {track.Title,-10} {what}, AAC {recording.AudioBitrateKbps} kbps");
         }
 
-        Console.WriteLine($"  -> {recording.OutputPath}");
+        if (recording.Replay is { } replay)
+        {
+            Console.WriteLine($"Replay buffer: last {replay.BufferSeconds:0.#} s; save a clip with {hotkey} (or S in this window)");
+            Console.WriteLine($"  clips -> {library.Root}");
+        }
+
+        if (recording.OutputPath is { } path)
+        {
+            Console.WriteLine($"  -> {path}");
+        }
+
         Console.WriteLine();
     }
 
-    private static void WaitForStop(RecordingSession session, long? limitQpc)
+    private static void WaitForStop(RecordingSession session, long? limitQpc, ConcurrentQueue<ClipResult> clips)
     {
         using var stop = new ManualResetEventSlim();
         ConsoleCancelEventHandler onCancel = (_, e) =>
@@ -68,6 +95,10 @@ internal static class RecordCommand
         Console.WriteLine(limitQpc is { } l
             ? $"Recording for {QpcClock.TicksToMilliseconds(l - session.StartQpc) / 1000:0.#} s. Press Enter or Ctrl+C to stop early."
             : "Recording. Press Enter or Ctrl+C to stop.");
+        if (session.HasReplayBuffer)
+        {
+            Console.WriteLine("Press S (or the hotkey) to save a clip.");
+        }
 
         // Warnings would break the redrawn status block; they still reach the log file.
         LogLevel previousLevel = Log.ConsoleLevel;
@@ -80,10 +111,17 @@ internal static class RecordCommand
         {
             while (QpcClock.Now < session.EndQpc)
             {
-                string? reason = stop.Wait(50) ? "Ctrl+C"
+                bool cancelled = stop.Wait(50);
+                ConsoleKey? key = readKeys && Console.KeyAvailable ? Console.ReadKey(intercept: true).Key : null;
+                if (key == ConsoleKey.S && session.HasReplayBuffer)
+                {
+                    session.SaveClip(QpcClock.Now);
+                }
+
+                string? reason = cancelled ? "Ctrl+C"
                     : session.VideoClosed ? "captured window closed"
                     : session.VideoStopped ? "video encoding failed"
-                    : readKeys && Console.KeyAvailable && Console.ReadKey(intercept: true).Key == ConsoleKey.Enter ? "Enter"
+                    : key == ConsoleKey.Enter ? "Enter"
                     : null;
                 if (reason is not null)
                 {
@@ -97,7 +135,7 @@ internal static class RecordCommand
                     double seconds = lastStatus.Elapsed.TotalSeconds;
                     lastStatus.Restart();
                     SessionStatus status = session.GetStatus();
-                    display.Render(BuildStatus(status, previous, seconds));
+                    display.Render(BuildStatus(status, previous, seconds, session.OutputPath is not null, clips));
                     previous = status;
                 }
             }
@@ -111,11 +149,13 @@ internal static class RecordCommand
         }
     }
 
-    private static List<string> BuildStatus(SessionStatus status, SessionStatus? previous, double seconds)
+    private static List<string> BuildStatus(
+        SessionStatus status, SessionStatus? previous, double seconds, bool hasFile, ConcurrentQueue<ClipResult> clips)
     {
         var lines = new List<string>
         {
-            $"  {TimeSpan.FromTicks(status.ElapsedTicks):mm\\:ss}  file {status.BytesWritten / 1024.0 / 1024.0,7:0.0} MB" +
+            $"  {TimeSpan.FromTicks(status.ElapsedTicks):mm\\:ss}" +
+            (hasFile ? $"  file {status.BytesWritten / 1024.0 / 1024.0,7:0.0} MB" : string.Empty) +
             (status.WriteError is null ? string.Empty : "  WRITE ERROR"),
         };
 
@@ -141,15 +181,28 @@ internal static class RecordCommand
                 $"  {(t.Fault is not null ? "FAULT" : t.Source ?? "waiting")}");
         }
 
+        if (status.Buffer is { } buffer)
+        {
+            ClipResult? last = clips.LastOrDefault();
+            string lastText = last is null ? string.Empty
+                : last.Error is { } error ? $"  last FAILED: {error.Message}"
+                : $"  last {Path.GetFileName(last.Path)} ({last.DurationSeconds:0.0} s)";
+            lines.Add(
+                $"  {"Buffer",-10} {QpcClock.TicksToMilliseconds(buffer.HeldTicks) / 1000,5:0.0} s  {buffer.Bytes / 1024.0 / 1024.0,6:0.0} MB" +
+                $"  {buffer.Packets,6} packets  clips {clips.Count}{lastText}");
+        }
+
         return lines;
     }
 
-    private static void PrintSummary(RecordingSession session, SessionStatus status)
+    private static void PrintSummary(RecordingSession session, SessionStatus status, IReadOnlyList<ClipResult> clips)
     {
         double seconds = QpcClock.TicksToMilliseconds(session.EndQpc - session.StartQpc) / 1000;
 
         Console.WriteLine();
-        Console.WriteLine($"Summary: {seconds:0.000} s, {status.BytesWritten / 1024.0 / 1024.0:0.0} MB, {status.BytesWritten * 8 / Math.Max(seconds, 0.001) / 1_000_000:0.0} Mbps");
+        Console.WriteLine(session.OutputPath is null
+            ? $"Summary: {seconds:0.000} s"
+            : $"Summary: {seconds:0.000} s, {status.BytesWritten / 1024.0 / 1024.0:0.0} MB, {status.BytesWritten * 8 / Math.Max(seconds, 0.001) / 1_000_000:0.0} Mbps");
         if (status.Video is { } video)
         {
             PipelineStats p = video.Pipeline;
@@ -186,7 +239,22 @@ internal static class RecordCommand
         }
 
         Console.WriteLine();
-        Console.WriteLine($"File: {session.OutputPath}");
+        if (session.OutputPath is { } path)
+        {
+            Console.WriteLine($"File: {path}");
+        }
+
+        if (session.HasReplayBuffer)
+        {
+            Console.WriteLine(clips.Count == 0 ? "Clips: none saved" : $"Clips: {clips.Count}");
+            foreach (ClipResult clip in clips)
+            {
+                Console.WriteLine(clip.Error is null
+                    ? $"  {clip.Path}  {clip.DurationSeconds:0.000} s"
+                    : $"  {clip.PressedAt:HH:mm:ss} FAILED: {clip.Error.Message}");
+            }
+        }
+
         if (Log.FilePath is not null)
         {
             Console.WriteLine($"Log: {Log.FilePath}");

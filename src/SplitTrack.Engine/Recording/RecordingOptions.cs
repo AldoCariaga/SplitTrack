@@ -32,13 +32,20 @@ public sealed record VideoOptions(
     bool Cursor = true,
     int Adapter = 0);
 
+/// <param name="BufferSeconds">How much is kept in memory, and so the length of a saved clip.</param>
+/// <param name="LibraryDirectory">Where clips are saved.</param>
+public sealed record ReplayOptions(double BufferSeconds, string LibraryDirectory);
+
+/// <param name="OutputPath">The whole session as one MKV (+ sidecar and thumbnail at the end), or null for none.</param>
 /// <param name="Video">Null records audio only.</param>
 /// <param name="AudioTracks">In the order they appear in the file.</param>
+/// <param name="Replay">Keep a replay buffer that clips can be saved from, or null for none.</param>
 public sealed record RecordingOptions(
-    string OutputPath,
+    string? OutputPath,
     VideoOptions? Video,
     IReadOnlyList<AudioTrackOptions> AudioTracks,
-    int AudioBitrateKbps = 160);
+    int AudioBitrateKbps = 160,
+    ReplayOptions? Replay = null);
 
 /// <summary>A recording cannot start because of something the user asked for (no such window, nothing to record...).</summary>
 public sealed class RecordingSetupException(string message) : Exception(message);

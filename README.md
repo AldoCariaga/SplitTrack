@@ -4,9 +4,10 @@ A Windows game recorder that keeps **one audio track per source** (game, Discord
 you can choose later which ones end up in the exported clip. Per-app audio comes from WASAPI
 process loopback, so no virtual audio cables are needed.
 
-Status: **Milestone 3, the recorder** (`tools/SplitTrack.RecordCli`): one MKV with video and one
-named AAC track per audio source. The milestone 1 and 2 proofs of concept (`tools/SplitTrack.AudioPoc`,
-`tools/SplitTrack.VideoPoc`) are still there.
+Status: **Milestone 4, replay buffer and library** (`tools/SplitTrack.RecordCli`): one MKV with
+video and one named AAC track per audio source, either recorded whole or kept as a replay buffer
+that a hotkey saves clips from; every file gets a JSON sidecar and a thumbnail. The milestone 1 and
+2 proofs of concept (`tools/SplitTrack.AudioPoc`, `tools/SplitTrack.VideoPoc`) are still there.
 
 ## Requirements
 
@@ -35,6 +36,7 @@ dotnet publish tools\SplitTrack.VideoPoc -c Release -o out\video-poc
 
 dotnet run --project tools\SplitTrack.RecordCli -c Release -- list
 dotnet run --project tools\SplitTrack.RecordCli -c Release -- record --game msedge.exe --mic --system --seconds 15 --out C:\Temp\poc
+dotnet run --project tools\SplitTrack.RecordCli -c Release -- replay --game msedge.exe --mic --system --buffer 30 --out C:\Temp\poc
 dotnet publish tools\SplitTrack.RecordCli -c Release -o out\record-cli
 ```
 
@@ -51,10 +53,12 @@ SplitTrack.RecordCli record [--monitor <n> | --window <hwnd|exe|title text> | --
                             [--no-cursor] [--adapter <n>]
                             [--game <exe|pid>] [--app <Title>=<exe|pid>]... [--mic [name]] [--system]
                             [--audio-bitrate <kbps, 160>] [--seconds <n>] [--out <dir>]
+SplitTrack.RecordCli replay [same options as record] [--buffer <s, 60>] [--hotkey <keys, Alt+F10>] [--record]
 ```
 
-`record` writes `<ts>.mkv`: the video as in VideoPoc, then one AAC track (48 kHz stereo) per audio
-option, titled and ordered like this:
+Files go to the library folder, `Videos\SplitTrack` unless `--out` says otherwise. `record` writes
+`<ts>_rec.mkv`: the video as in VideoPoc, then one AAC track (48 kHz stereo) per audio option,
+titled and ordered like this:
 
 | Option | Track title | What it records |
 |---|---|---|
@@ -68,6 +72,20 @@ is filled with silence. Each source's clock is gently resampled to the recording
 recordings do not drift (the status line's `corr` column shows the correction in ppm). In VLC,
 choose the track under Audio → Audio Track. Stop with `--seconds`, Enter, or Ctrl+C; recording
 also stops when a captured window closes.
+
+`replay` keeps the last `--buffer` seconds in memory, already encoded (about 150 MB for 60 s at
+20 Mbps), and writes nothing until you press the hotkey. The hotkey works while a game has focus;
+S in the console window does the same. Each press saves `<ts>_clip.mkv` with every track, ending
+at the moment of the press and starting on a keyframe (at most 1 s before the buffer length, so
+a 60 s buffer gives clips of 60–61 s). Presses in quick succession give overlapping clips.
+`--record` also records the whole session, as `record` does. If another program already uses the
+hotkey (NVIDIA's Instant Replay uses Alt+F10), `replay` says so and exits; pick another with
+`--hotkey`, e.g. `--hotkey Ctrl+Shift+F8`.
+
+Next to each video there is `<name>.json`, a sidecar with what the file holds (length, game, video
+settings, the audio tracks with their titles and stream numbers), and `<name>.jpg`, a 320 px
+thumbnail of the middle of the video. The sidecar is written last, so a video without one is an
+interrupted save.
 
 ## AudioPoc commands
 
@@ -102,7 +120,7 @@ SplitTrack.VideoPoc record [--monitor <n> | --window <hwnd|exe|title text>] [--f
 
 `list` shows GPUs, monitors, capturable windows, and which H.264 encoders actually work on this PC.
 `record` writes `<ts>_video.mkv`: H.264 (BT.709, limited range), constant frame rate, a keyframe
-every 2 s, average bitrate `--bitrate` with peaks up to 1.5×. Capture is Windows Graphics Capture;
+every second, average bitrate `--bitrate` with peaks up to 1.5×. Capture is Windows Graphics Capture;
 colour conversion and scaling run on the GPU. `auto` uses the GPU vendor's encoder (AMD → AMF,
 NVIDIA → NVENC, Intel → QSV) and falls back to x264 on the CPU. A window that is resized keeps the
 first size (cropped or padded with black); a window that closes ends the recording.
@@ -163,7 +181,10 @@ src/SplitTrack.Capture   Audio: WASAPI sources, device watcher, session scanner,
 src/SplitTrack.FFmpeg    FFmpeg loading and logging, packet and stream helpers
 src/SplitTrack.Encode    GPU BGRA→NV12 conversion, H.264 encoder (AMF / NVENC / QSV / x264), resampler, AAC encoder
 src/SplitTrack.Mux       WAV writer, MKV writer
-src/SplitTrack.Engine    Recording session: video loop, audio tracks, source watcher (process restarts, device changes)
+src/SplitTrack.Buffer    Replay buffer: the last seconds of encoded packets, cut into keyframe-aligned clips
+src/SplitTrack.Library   Library folder naming, JSON sidecars, thumbnails
+src/SplitTrack.Engine    Capture session: video loop, audio tracks, source watcher (process restarts, device changes),
+                         packet routing to file and replay buffer, clip saving, global hotkey
 tools/SplitTrack.AudioPoc
 tools/SplitTrack.VideoPoc
 tools/SplitTrack.RecordCli

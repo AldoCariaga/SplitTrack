@@ -1,5 +1,6 @@
 using SplitTrack.Common.Diagnostics;
 using SplitTrack.Common.Platform;
+using SplitTrack.Engine.Input;
 using SplitTrack.Engine.Recording;
 using SplitTrack.FFmpeg;
 using SplitTrack.RecordCli.Commands;
@@ -16,6 +17,16 @@ internal static class Program
               Audio processes, microphones, GPUs, monitors, windows and working H.264 encoders.
 
           SplitTrack.RecordCli record [options]
+              Records the whole session to <out>\<time>_rec.mkv (+ .json sidecar, .jpg thumbnail).
+
+          SplitTrack.RecordCli replay [options] [--buffer <s>] [--hotkey <keys>] [--record]
+              Keeps the last seconds in memory; the hotkey (or S in this window) saves them as
+              <out>\<time>_clip.mkv (+ .json, .jpg).
+              --buffer <s>              Seconds kept, i.e. the clip length (default 60)
+              --hotkey <keys>           Save hotkey, works while a game has focus (default Alt+F10)
+              --record                  Also record the whole session, as 'record' does
+
+          Options for record and replay
             Video
               --monitor <n>             Capture monitor n from 'list' (default 0, the primary)
               --window <hwnd|exe|text>  Capture a window instead
@@ -34,10 +45,11 @@ internal static class Program
               --audio-bitrate <kbps>    AAC bitrate per track (default 160)
             Output
               --seconds <n>             Stop after n seconds (otherwise Enter or Ctrl+C)
-              --out <dir>               Output folder (default: current folder)
+              --out <dir>               Library folder (default: Videos\SplitTrack)
 
-        Example:
-          SplitTrack.RecordCli record --game game.exe --app Discord=Discord.exe --mic --system --seconds 60 --out C:\Temp\poc
+        Examples:
+          SplitTrack.RecordCli record --game game.exe --app Discord=Discord.exe --mic --system --seconds 60
+          SplitTrack.RecordCli replay --game game.exe --app Discord=Discord.exe --mic --system --buffer 30
         """;
 
     private static int Main(string[] args)
@@ -60,12 +72,12 @@ internal static class Program
             }
 
             string command = args[0].ToLowerInvariant();
-            if (command is not ("list" or "record"))
+            if (command is not ("list" or "record" or "replay"))
             {
                 throw new UsageException($"Unknown command '{args[0]}'.");
             }
 
-            RecordOptions? options = command == "record" ? RecordOptions.Parse(args[1..]) : null;
+            RecordOptions? options = command == "list" ? null : RecordOptions.Parse(args[1..], replay: command == "replay");
             FFmpegLibrary.Initialize();
             return options is null ? ListCommand.Run() : RecordCommand.Run(options);
         }
@@ -76,8 +88,9 @@ internal static class Program
             Console.Error.WriteLine(Usage);
             return 1;
         }
-        catch (RecordingSetupException ex)
+        catch (Exception ex) when (ex is RecordingSetupException or HotkeyUnavailableException)
         {
+            Log.Info(ex.Message);
             Console.Error.WriteLine(ex.Message);
             return 1;
         }

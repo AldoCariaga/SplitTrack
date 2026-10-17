@@ -1,3 +1,4 @@
+using SplitTrack.Buffer;
 using SplitTrack.Capture.Audio.Timeline;
 using SplitTrack.Capture.Video;
 using SplitTrack.Engine.Video;
@@ -20,9 +21,12 @@ public sealed record AudioTrackStatus(
 public sealed record VideoStatus(string Description, PipelineStats Pipeline, CaptureStats Capture, int Fps, Exception? Fault);
 
 /// <param name="ElapsedTicks">Since the recording's first frame, in QPC ticks; 0 before it starts.</param>
+/// <param name="BytesWritten">The session MKV so far; 0 without one.</param>
+/// <param name="Buffer">The replay buffer, or null without one.</param>
 public sealed record SessionStatus(
     long ElapsedTicks,
     VideoStatus? Video,
     IReadOnlyList<AudioTrackStatus> Audio,
     long BytesWritten,
-    Exception? WriteError);
+    Exception? WriteError,
+    ReplayBufferStats? Buffer);

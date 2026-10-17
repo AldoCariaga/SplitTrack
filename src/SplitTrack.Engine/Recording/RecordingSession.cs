@@ -1,15 +1,21 @@
+using SplitTrack.Buffer;
 using SplitTrack.Common.Audio;
 using SplitTrack.Common.Diagnostics;
 using SplitTrack.Common.Time;
+using SplitTrack.Encode.Video;
 using SplitTrack.Engine.Audio;
+using SplitTrack.Engine.Replay;
 using SplitTrack.Engine.Video;
+using SplitTrack.FFmpeg;
+using SplitTrack.Library;
 using SplitTrack.Mux.Mkv;
 
 namespace SplitTrack.Engine.Recording;
 
 /// <summary>
-/// One recording into one MKV: video plus one AAC track per audio source, all on the QPC clock
-/// from the same start instant to the same end instant. Open → Start → StopAt/StopSoon → Complete.
+/// One capture session: video plus one AAC track per audio source, all on the QPC clock from the
+/// same start instant to the same end instant. Packets go to the session MKV, the replay buffer,
+/// or both. Open → Start → (SaveClip...) → StopAt/StopSoon → Complete.
 /// </summary>
 public sealed class RecordingSession : IDisposable
 {
@@ -21,16 +27,26 @@ public sealed class RecordingSession : IDisposable
 
     private readonly RecordingOptions _options;
     private readonly List<AudioTrack> _tracks = [];
+    private readonly List<SessionStream> _streams = [];
     private MkvWriter? _mkv;
+    private ReplayBuffer? _replay;
+    private ClipSaver? _saver;
     private VideoRecorder? _video;
     private SourceWatcher? _watcher;
     private int _videoStream = -1;
     private long _endQpc = long.MaxValue;
+    private DateTimeOffset _startedAt;
     private bool _completed;
 
     private RecordingSession(RecordingOptions options) => _options = options;
 
-    public string OutputPath => _options.OutputPath;
+    /// <summary>A clip was saved or failed to save; raised on the saver thread.</summary>
+    public event Action<ClipResult>? ClipSaved;
+
+    /// <summary>The session MKV, or null without one.</summary>
+    public string? OutputPath => _options.OutputPath;
+
+    public bool HasReplayBuffer => _replay is not null;
 
     /// <summary>The first frame's instant; 0 until <see cref="Start"/>.</summary>
     public long StartQpc { get; private set; }
@@ -45,12 +61,17 @@ public sealed class RecordingSession : IDisposable
 
     public bool VideoClosed => _video?.IsClosed ?? false;
 
-    /// <summary>Creates the file, the encoders and the video capture; nothing is recorded until <see cref="Start"/>.</summary>
+    /// <summary>Creates the outputs, the encoders and the video capture; nothing is recorded until <see cref="Start"/>.</summary>
     public static RecordingSession Open(RecordingOptions options)
     {
         if (options.Video is null && options.AudioTracks.Count == 0)
         {
             throw new RecordingSetupException("Nothing to record: no video and no audio tracks.");
+        }
+
+        if (options.OutputPath is null && options.Replay is null)
+        {
+            throw new RecordingSetupException("Nothing to save to: no output file and no replay buffer.");
         }
 
         var session = new RecordingSession(options);
@@ -73,14 +94,35 @@ public sealed class RecordingSession : IDisposable
         _video?.StartCapture();
 
         StartQpc = QpcClock.Now;
+        _startedAt = DateTimeOffset.Now;
         foreach (AudioTrack track in _tracks)
         {
             track.Aligner.Arm(StartQpc);
         }
 
-        _video?.StartEncoding(StartQpc, packet => _mkv!.Write(_videoStream, packet));
+        _video?.StartEncoding(StartQpc, packet => Route(_videoStream, packet));
         _watcher.Start();
-        Log.Info($"Recording started at qpc {StartQpc}: {OutputPath}");
+        Log.Info($"Session started at qpc {StartQpc}: {OutputPath ?? "no file"}{(_replay is null ? string.Empty : $", replay buffer {_options.Replay!.BufferSeconds:0.#} s")}");
+    }
+
+    /// <summary>
+    /// Saves the replay buffer's last <see cref="ReplayOptions.BufferSeconds"/> up to
+    /// <paramref name="pressedQpc"/> as a clip, in the background; <see cref="ClipSaved"/> reports the result.
+    /// </summary>
+    public void SaveClip(long pressedQpc)
+    {
+        if (_options.Replay is null)
+        {
+            throw new InvalidOperationException("This session has no replay buffer.");
+        }
+
+        if (StartQpc == 0)
+        {
+            return;
+        }
+
+        Log.Info($"Clip requested at {QpcClock.TicksToMilliseconds(pressedQpc - StartQpc) / 1000:0.000} s");
+        _saver!.Request(Math.Min(pressedQpc, EndQpc) - StartQpc, DateTime.Now);
     }
 
     /// <summary>
@@ -110,7 +152,10 @@ public sealed class RecordingSession : IDisposable
         return EndQpc;
     }
 
-    /// <summary>Waits for the end instant, then stops the sources, drains the encoders and closes the file.</summary>
+    /// <summary>
+    /// Waits for the end instant, then stops the sources, drains the encoders, finishes requested
+    /// clips and closes the session MKV (writing its sidecar and thumbnail).
+    /// </summary>
     public void Complete()
     {
         if (_completed)
@@ -137,9 +182,15 @@ public sealed class RecordingSession : IDisposable
             track.Finish();
         }
 
-        _mkv!.Close();
+        _mkv?.Close();
+        _saver?.Dispose();
         _completed = true;
-        Log.Info($"Recording stopped after {QpcClock.TicksToMilliseconds(EndQpc - StartQpc):0} ms");
+        Log.Info($"Session stopped after {QpcClock.TicksToMilliseconds(EndQpc - StartQpc):0} ms");
+
+        if (_mkv is not null && _mkv.WriteError is null)
+        {
+            WriteRecordingSidecar(_mkv.Path);
+        }
     }
 
     public SessionStatus GetStatus()
@@ -156,7 +207,8 @@ public sealed class RecordingSession : IDisposable
             .ToList();
 
         long elapsed = StartQpc == 0 ? 0 : Math.Min(QpcClock.Now, EndQpc) - StartQpc;
-        return new SessionStatus(Math.Max(0, elapsed), _video?.GetStatus(), audio, _mkv?.BytesWritten ?? 0, _mkv?.WriteError);
+        return new SessionStatus(
+            Math.Max(0, elapsed), _video?.GetStatus(), audio, _mkv?.BytesWritten ?? 0, _mkv?.WriteError, _replay?.GetStats());
     }
 
     public void Dispose()
@@ -169,28 +221,101 @@ public sealed class RecordingSession : IDisposable
         }
 
         _mkv?.Dispose();
+        _saver?.Dispose();
+        _replay?.Dispose();
+        foreach (SessionStream stream in _streams)
+        {
+            stream.Info.Dispose();
+        }
     }
 
     private void Initialize()
     {
-        _mkv = new MkvWriter(OutputPath);
         if (_options.Video is { } videoOptions)
         {
             _video = VideoRecorder.Open(videoOptions);
-            using var info = _video.CreateStreamInfo("Video");
-            _videoStream = _mkv.AddStream(info);
+            _videoStream = _streams.Count;
+            _streams.Add(new SessionStream(_video.CreateStreamInfo("Video"), IsDefault: true));
         }
 
         foreach (AudioTrackOptions trackOptions in _options.AudioTracks)
         {
-            int stream = -1;
-            var track = new AudioTrack(trackOptions, _options.AudioBitrateKbps, packet => _mkv.Write(stream, packet));
+            int stream = _streams.Count;
+            var track = new AudioTrack(trackOptions, _options.AudioBitrateKbps, packet => Route(stream, packet));
             _tracks.Add(track);
-            using var info = track.CreateStreamInfo();
-            stream = _mkv.AddStream(info, isDefault: _tracks.Count == 1);
+            _streams.Add(new SessionStream(track.CreateStreamInfo(), IsDefault: _tracks.Count == 1));
+        }
+
+        if (_options.OutputPath is { } path)
+        {
+            _mkv = new MkvWriter(path);
+            foreach (SessionStream stream in _streams)
+            {
+                _mkv.AddStream(stream.Info, stream.IsDefault);
+            }
+
+            _mkv.Start();
+        }
+
+        if (_options.Replay is { } replay)
+        {
+            _replay = new ReplayBuffer(_streams.Count, _videoStream, (long)(replay.BufferSeconds * QpcClock.TicksPerSecond));
+            _saver = new ClipSaver(
+                _replay,
+                _streams,
+                _video is not null,
+                new LibraryFolder(replay.LibraryDirectory),
+                (paths, created, seconds, thumbnail) => Describe(EntryKind.Clip, paths, created, seconds, thumbnail),
+                result => ClipSaved?.Invoke(result));
         }
 
         _watcher = new SourceWatcher(_tracks);
-        _mkv.Start();
+    }
+
+    /// <summary>Hands an encoder's packet to every output; the buffer gets its own reference when the file also takes one.</summary>
+    private void Route(int stream, MediaPacket packet)
+    {
+        if (_replay is not null)
+        {
+            _replay.Add(stream, _mkv is null ? packet : packet.Clone());
+        }
+
+        _mkv?.Write(stream, packet);
+    }
+
+    private void WriteRecordingSidecar(string videoPath)
+    {
+        try
+        {
+            EntryPaths paths = EntryPaths.ForVideo(videoPath);
+            bool hasThumbnail = _video is not null && ClipSaver.TryWriteThumbnail(paths);
+            double seconds = (double)(EndQpc - StartQpc) / QpcClock.TicksPerSecond;
+            LibraryFolder.WriteSidecar(paths.Sidecar, Describe(EntryKind.Recording, paths, _startedAt, seconds, hasThumbnail));
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"Writing the sidecar for {videoPath} failed", ex);
+        }
+    }
+
+    private Sidecar Describe(EntryKind kind, EntryPaths paths, DateTimeOffset created, double seconds, bool hasThumbnail)
+    {
+        SidecarVideo? video = _video is null
+            ? null
+            : new SidecarVideo(_video.Settings.Width, _video.Settings.Height, _video.Settings.Fps, _video.Settings.BitrateKbps, _video.EncoderKind.ShortName());
+        var tracks = _tracks
+            .Select((t, i) => new SidecarTrack(_videoStream + 1 + i, t.Title, t.Options.Kind.ToString().ToLowerInvariant(), t.Options.Target))
+            .ToList();
+        return new Sidecar(
+            Sidecar.CurrentVersion,
+            kind,
+            Path.GetFileName(paths.Video),
+            hasThumbnail ? Path.GetFileName(paths.Thumbnail) : null,
+            created,
+            Math.Round(seconds, 3),
+            _options.AudioTracks.FirstOrDefault(t => t.IsGame)?.Target,
+            video,
+            tracks,
+            kind == EntryKind.Clip ? _options.Replay?.BufferSeconds : null);
     }
 }

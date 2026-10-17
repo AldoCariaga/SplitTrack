@@ -1,7 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.CsWin32" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SplitTrack.Buffer\SplitTrack.Buffer.csproj" />
     <ProjectReference Include="..\SplitTrack.Capture\SplitTrack.Capture.csproj" />
     <ProjectReference Include="..\SplitTrack.Encode\SplitTrack.Encode.csproj" />
+    <ProjectReference Include="..\SplitTrack.Library\SplitTrack.Library.csproj" />
     <ProjectReference Include="..\SplitTrack.Mux\SplitTrack.Mux.csproj" />
   </ItemGroup>
 </Project>

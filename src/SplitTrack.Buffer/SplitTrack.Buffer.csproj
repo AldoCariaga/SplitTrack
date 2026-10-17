@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\SplitTrack.FFmpeg\SplitTrack.FFmpeg.csproj" />
+  </ItemGroup>
+</Project>

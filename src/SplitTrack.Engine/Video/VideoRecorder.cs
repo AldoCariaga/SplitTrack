@@ -33,6 +33,8 @@ internal sealed class VideoRecorder : IDisposable
 
     public VideoEncoderSettings Settings => _encoder.Settings;
 
+    public VideoEncoderKind EncoderKind => _encoder.Kind;
+
     /// <summary>The captured window closed or its monitor went away.</summary>
     public bool IsClosed => _capture.IsClosed;
 

@@ -64,7 +64,7 @@ public static class VideoEncoderKinds
     }
 }
 
-public sealed record VideoEncoderSettings(int Width, int Height, int Fps, int BitrateKbps, int GopSeconds = 2)
+public sealed record VideoEncoderSettings(int Width, int Height, int Fps, int BitrateKbps, int GopSeconds = 1)
 {
     /// <summary>Output size for a capture scaled down to <paramref name="maxHeight"/>. Never upscales; both sides even, as NV12 requires.</summary>
     public static (int Width, int Height) ScaledSize(int width, int height, int? maxHeight)
