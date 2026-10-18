@@ -41,6 +41,8 @@
                         <TextBlock Text="{Binding StateText}" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
                         <TextBlock Text="{Binding DetailText}" Margin="12,0,0,0" VerticalAlignment="Center" Style="{StaticResource Caption}" FontSize="13" TextWrapping="Wrap" />
                     </StackPanel>
+                    <TextBlock Text="{Binding PresetText}" Margin="18,4,0,0" Style="{StaticResource Caption}"
+                               Visibility="{Binding PresetText, Converter={StaticResource NullToVisibility}}" />
                     <TextBlock Text="{Binding VideoText}" Margin="18,4,0,0" Style="{StaticResource Caption}" />
                     <ItemsControl ItemsSource="{Binding Meters}" Margin="18,10,0,0">
                         <ItemsControl.ItemsPanel>

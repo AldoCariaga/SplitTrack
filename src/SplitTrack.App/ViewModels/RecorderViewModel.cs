@@ -51,6 +51,7 @@ public sealed class RecorderViewModel : ObservableObject
     private string _stateText = "Off";
     private string? _detailText;
     private string _videoText = string.Empty;
+    private string _presetText = string.Empty;
     private bool _isRecording;
     private bool _replayOn;
     private bool _canSaveClip;
@@ -92,6 +93,13 @@ public sealed class RecorderViewModel : ObservableObject
     {
         get => _videoText;
         private set => Set(ref _videoText, value);
+    }
+
+    /// <summary>The preset in use and why; empty while there is only one preset.</summary>
+    public string PresetText
+    {
+        get => _presetText;
+        private set => Set(ref _presetText, value);
     }
 
     public bool IsRecording
@@ -183,6 +191,10 @@ public sealed class RecorderViewModel : ObservableObject
             _ => ("Off", _service.ReplayEnabled ? null : "Replay buffer off. Turn it on to save clips with the hotkey."),
         };
 
+        PresetText = _service.Settings.Presets.Count > 1
+            ? $"Preset: {_service.Preset.Name}{(_service.PresetGame is { } game ? $" ({game} is running)" : string.Empty)}"
+            : string.Empty;
+
         if (status?.Video is { } video)
         {
             // Frames encoded over the last second or so, not since the start.
@@ -213,7 +225,7 @@ public sealed class RecorderViewModel : ObservableObject
     // The buffer holds up to one GOP more than its length; a clip is never longer than asked plus that.
     private string HeldText(long heldTicks)
     {
-        double length = _service.Settings.Replay.BufferSeconds;
+        double length = _service.Preset.Replay.BufferSeconds;
         double held = Math.Min(length, QpcClock.TicksToMilliseconds(heldTicks) / 1000);
         return held >= length ? $"{length:0} s ready" : $"{held:0} of {length:0} s held";
     }

@@ -61,6 +61,15 @@ public static class SettingsFile
                 $"{path} is version {settings.Version}, written by a newer SplitTrack; this one reads up to version {RecorderSettings.CurrentVersion}.");
         }
 
+        if (settings.Version < 2)
+        {
+            settings.UpgradeFromVersion1();
+        }
+        else if (settings.HasVersion1Sections)
+        {
+            throw new SettingsException($"{path} is not valid: since version 2, video, audio and replay belong inside a preset (presets[...]).");
+        }
+
         settings.FillMissing();
         settings.Version = RecorderSettings.CurrentVersion;
         return settings;
@@ -80,6 +89,10 @@ public static class SettingsFile
     /// <summary>A deep copy, e.g. for a settings page to edit.</summary>
     public static RecorderSettings Clone(RecorderSettings settings) =>
         JsonSerializer.Deserialize<RecorderSettings>(Serialize(settings), JsonOptions)!;
+
+    /// <summary>A deep copy, e.g. to start a new preset from an existing one.</summary>
+    public static PresetSettings Clone(PresetSettings preset) =>
+        JsonSerializer.Deserialize<PresetSettings>(JsonSerializer.Serialize(preset, JsonOptions), JsonOptions)!;
 
     /// <summary>The serializer's message without .NET type names, e.g. "line 4, video.fps: not a valid value here".</summary>
     private static string Describe(JsonException ex)

@@ -115,7 +115,7 @@ SplitTrack.RecordCli record [--monitor <n> | --window <hwnd|exe|title text> | --
                             [--cursor | --no-cursor] [--adapter <n>]
                             [--game <exe[,exe...]>] [--app <Title>=<exe[,exe...]>]... [--mic [name[,name...]]]
                             [--system] [--no-audio] [--audio-bitrate <kbps, 160>]
-                            [--seconds <n>] [--out <dir>] [--settings <file>]
+                            [--seconds <n>] [--out <dir>] [--settings <file>] [--preset <name>]
 SplitTrack.RecordCli replay [same options as record] [--buffer <s, 60>] [--hotkey <keys, Alt+F10>] [--record | --no-record]
 SplitTrack.RecordCli settings [--settings <file>]
 SplitTrack.RecordCli settings save [options of record and replay, except --seconds]
@@ -138,39 +138,77 @@ out-of-range values are reported with their line and name):
 
 ```jsonc
 {
-  "version": 1,
+  "version": 2,
   "libraryFolder": null,                 // null: Videos\SplitTrack
-  "video": {
-    "enabled": true,                     // false: audio only
-    "monitor": 0,
-    "window": null,                      // window handle, exe or title text instead of the monitor
-    "fps": 60,
-    "bitrateMbps": 20,
-    "maxHeight": null,                   // e.g. 1080 to scale a 1440p monitor down
-    "encoder": "auto",                   // auto, amf, nvenc, qsv, x264
-    "cursor": true,
-    "adapter": 0
-  },
-  "audio": {
-    "bitrateKbps": 160,
-    "tracks": [                          // in this order in the file
-      { "title": "Game", "kind": "game", "processes": ["VALORANT-Win64-Shipping.exe", "auto"] },
-      { "title": "Discord", "kind": "app", "processes": ["Discord.exe"] },
-      { "title": "Mic", "kind": "microphone", "devices": ["Tamago"] },   // no devices: default mic
-      { "title": "System", "kind": "system" }
-    ]
-  },
-  "replay": {
-    "enabled": true,                     // the app keeps the replay buffer running (RecordCli ignores this)
-    "bufferSeconds": 60,
-    "alsoRecord": false                  // RecordCli replay only
-  },
   "hotkeys": {
     "saveClip": "Alt+F10",
     "toggleRecording": "Alt+F9"          // the app only; null or "" for none
-  }
+  },
+  "activePreset": "Desktop",             // used while none of the presets' games runs
+  "presets": [
+    {
+      "name": "Desktop",
+      "games": [],                       // exe names that switch the app to this preset
+      "video": {
+        "enabled": true,                 // false: audio only
+        "monitor": 0,
+        "window": null,                  // window handle, exe or title text instead of the monitor
+        "fps": 60,
+        "bitrateMbps": 20,
+        "maxHeight": null,               // e.g. 1080 to scale a 1440p monitor down
+        "encoder": "auto",               // auto, amf, nvenc, qsv, x264
+        "cursor": true,
+        "adapter": 0
+      },
+      "audio": {
+        "bitrateKbps": 160,
+        "tracks": [                      // in this order in the file
+          { "title": "Game", "kind": "game", "processes": ["auto"] },
+          { "title": "Discord", "kind": "app", "processes": ["Discord.exe"] },
+          { "title": "Mic", "kind": "microphone", "devices": ["Tamago"] },   // no devices: default mic
+          { "title": "System", "kind": "system" }
+        ]
+      },
+      "replay": {
+        "enabled": true,                 // the app keeps the replay buffer running (RecordCli ignores this)
+        "bufferSeconds": 60,
+        "alsoRecord": false              // RecordCli replay only
+      }
+    },
+    {
+      "name": "Valorant",
+      "games": ["VALORANT-Win64-Shipping.exe"],
+      "video": { "window": "VALORANT-Win64-Shipping.exe", "fps": 144, "bitrateMbps": 30 },
+      "audio": { "tracks": [ { "title": "Game", "kind": "game", "processes": ["VALORANT-Win64-Shipping.exe"] },
+                             { "title": "Mic", "kind": "microphone" }, { "title": "System", "kind": "system" } ] },
+      "replay": { "bufferSeconds": 30 }
+    }
+  ]
 }
 ```
+
+A section left out takes its defaults. Version 1 files (video, audio and replay at the top level)
+are read as one preset named `Default` and written back as version 2.
+
+### Presets
+
+A preset is a capture setup: video, audio tracks and the replay buffer. The library folder, the
+hotkeys and Start with Windows are shared. In the app:
+
+- **Settings → Preset** picks the preset the page edits, makes new ones (a copy of the shown one)
+  and deletes them. Its **Switch to it while** list names the games that select it; the checkbox
+  under it makes it the default preset, used while none of those games runs.
+- **The tray menu's Preset submenu** (shown with two or more presets) switches by hand: the chosen
+  one becomes the default.
+- **Games switch on their own.** About once a second the app checks whether a preset's game is
+  running; when one starts, it switches to that preset, and when it closes, back to the default.
+  Only a change switches, so a preset picked by hand while a game runs stays until that game
+  closes. A recording is never cut: the switch waits until it stops. A game can be in one preset only.
+- Switching restarts capture, so the replay buffer starts empty.
+
+RecordCli does not follow games: `--preset <name>` picks one for the run (default: the active
+one), and `settings save --preset <name> ...` makes it the active one, creating it as a copy of
+the active preset if the name is new.
 
 On the command line, any of `--game`, `--app`, `--mic`, `--system` and `--no-audio` replaces the
 whole track list (in the order Game, apps, Mic, System); the other options change one value each.

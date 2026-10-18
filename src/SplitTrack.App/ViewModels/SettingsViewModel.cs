@@ -138,10 +138,26 @@ public sealed class TrackEditor : ObservableObject
     }
 }
 
+/// <summary>One preset in the settings page's list; the page's video, audio and replay fields edit the selected one.</summary>
+public sealed class PresetItem(PresetSettings data) : ObservableObject
+{
+    private string _name = data.Name;
+
+    /// <summary>The page's working copy; the fields are written back when another preset is selected or on save.</summary>
+    public PresetSettings Data { get; } = data;
+
+    public string Name { get => _name; set => Set(ref _name, value); }
+
+    public override string ToString() => Name;
+}
+
 /// <summary>The settings page: an editable copy of settings.json, applied (saved and restarted) with Save.</summary>
 public sealed class SettingsViewModel : ObservableObject
 {
     private readonly RecorderService _service;
+    private PresetItem? _selectedPreset;
+    private PresetItem? _defaultPreset;
+    private string _presetGames = string.Empty;
     private string _libraryFolder = string.Empty;
     private bool _videoEnabled;
     private bool _captureWindow;
@@ -172,9 +188,72 @@ public sealed class SettingsViewModel : ObservableObject
         AddTrackCommand = new RelayCommand(() => Tracks.Add(new TrackEditor(this, new TrackSettings { Title = NewTitle(), Kind = AudioTrackKind.App, Processes = [] })));
         RescanCommand = new RelayCommand(Rescan);
         OpenLogsCommand = new RelayCommand(() => Shell.OpenFolder(AppPaths.Logs));
+        NewPresetCommand = new RelayCommand(NewPreset);
+        DeletePresetCommand = new RelayCommand(DeletePreset, () => Presets.Count > 1);
         Rescan();
         Load();
     }
+
+    public ObservableCollection<PresetItem> Presets { get; } = [];
+
+    /// <summary>The preset the video, audio and replay fields show; selecting another stores them into this one first.</summary>
+    public PresetItem? SelectedPreset
+    {
+        get => _selectedPreset;
+        set
+        {
+            if (value is null || value == _selectedPreset)
+            {
+                return;
+            }
+
+            if (_selectedPreset is not null)
+            {
+                StorePreset(_selectedPreset);
+            }
+
+            _selectedPreset = value;
+            LoadPreset(value);
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(PresetName));
+            OnPropertyChanged(nameof(IsDefaultPreset));
+        }
+    }
+
+    public string PresetName
+    {
+        get => _selectedPreset?.Name ?? string.Empty;
+        set
+        {
+            if (_selectedPreset is not null && _selectedPreset.Name != value)
+            {
+                _selectedPreset.Name = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    /// <summary>Exe names, comma separated, that switch to the selected preset while they run.</summary>
+    public string PresetGames { get => _presetGames; set => Set(ref _presetGames, value); }
+
+    /// <summary>The selected preset is the one used while no preset's game runs; there is always exactly one.</summary>
+    public bool IsDefaultPreset
+    {
+        get => _selectedPreset is not null && _selectedPreset == _defaultPreset;
+        set
+        {
+            if (value && _selectedPreset is not null)
+            {
+                _defaultPreset = _selectedPreset;
+            }
+
+            OnPropertyChanged();
+        }
+    }
+
+    public RelayCommand NewPresetCommand { get; }
+
+    public RelayCommand DeletePresetCommand { get; }
 
     public static IReadOnlyList<Choice<int>> FpsChoices { get; } = [new(30, "30"), new(60, "60"), new(120, "120"), new(144, "144")];
 
@@ -266,38 +345,25 @@ public sealed class SettingsViewModel : ObservableObject
 
     public IReadOnlyList<string> Errors { get => _errors; private set => Set(ref _errors, value); }
 
-    /// <summary>Fills the page from the settings in use.</summary>
+    /// <summary>Fills the page from the settings in use, showing the preset in use.</summary>
     public void Load()
     {
-        RecorderSettings s = _service.Settings;
+        RecorderSettings s = SettingsFile.Clone(_service.Settings);
         LibraryFolder = s.LibraryRoot;
-        VideoEnabled = s.Video.Enabled;
-        CaptureWindow = !string.IsNullOrWhiteSpace(s.Video.Window);
-        Monitor = s.Video.Monitor;
-        Window = s.Video.Window ?? string.Empty;
-        Fps = s.Video.Fps;
-        BitrateMbps = s.Video.BitrateMbps;
-        MaxHeight = s.Video.MaxHeight ?? 0;
-        Encoder = (s.Video.Encoder ?? "auto").ToLowerInvariant();
-        Cursor = s.Video.Cursor;
-        Adapter = s.Video.Adapter;
-        AudioBitrate = s.Audio.BitrateKbps;
-        ReplayEnabled = s.Replay.Enabled;
-        BufferSeconds = s.Replay.BufferSeconds;
-        AlsoRecord = s.Replay.AlsoRecord;
         SaveClipHotkey = s.Hotkeys.SaveClip;
         RecordHotkey = s.Hotkeys.ToggleRecording ?? string.Empty;
         StartWithWindows = StartupEntry.IsEnabled;
-        Tracks.Clear();
-        foreach (TrackSettings track in s.Audio.Tracks)
+
+        // Cleared first, so selecting below does not store the page into a preset from before.
+        _selectedPreset = null;
+        Presets.Clear();
+        foreach (PresetSettings preset in s.Presets)
         {
-            Tracks.Add(new TrackEditor(this, track));
+            Presets.Add(new PresetItem(preset));
         }
 
-        if (!Monitors.Any(m => m.Value == Monitor))
-        {
-            Monitors.Add(new Choice<int>(Monitor, $"Monitor {Monitor + 1} (not connected)"));
-        }
+        _defaultPreset = Presets.First(p => p.Data == s.Active);
+        SelectedPreset = Presets.FirstOrDefault(p => RecorderSettings.NameEquals(p.Name, _service.Preset.Name)) ?? _defaultPreset;
 
         Errors = [];
         Message = null;
@@ -306,29 +372,134 @@ public sealed class SettingsViewModel : ObservableObject
     /// <summary>The page as settings; not validated.</summary>
     public RecorderSettings Build()
     {
+        if (_selectedPreset is not null)
+        {
+            StorePreset(_selectedPreset);
+        }
+
         RecorderSettings settings = SettingsFile.Clone(_service.Settings);
         settings.LibraryFolder = string.IsNullOrWhiteSpace(LibraryFolder)
             || Path.GetFullPath(LibraryFolder.Trim()).Equals(SplitTrack.Library.LibraryFolder.DefaultRoot, StringComparison.OrdinalIgnoreCase)
                 ? null
                 : LibraryFolder.Trim();
-        settings.Video.Enabled = VideoEnabled;
-        settings.Video.Monitor = Monitor;
-        settings.Video.Window = CaptureWindow && !string.IsNullOrWhiteSpace(Window) ? Window.Trim() : null;
-        settings.Video.Fps = Fps;
-        settings.Video.BitrateMbps = BitrateMbps;
-        settings.Video.MaxHeight = MaxHeight > 0 ? MaxHeight : null;
-        settings.Video.Encoder = Encoder;
-        settings.Video.Cursor = Cursor;
-        settings.Video.Adapter = Adapter;
-        settings.Audio.BitrateKbps = AudioBitrate;
-        settings.Audio.Tracks = Tracks.Select(t => t.ToSettings()).ToList();
-        settings.Replay.Enabled = ReplayEnabled;
-        settings.Replay.BufferSeconds = BufferSeconds;
-        settings.Replay.AlsoRecord = AlsoRecord;
         settings.Hotkeys.SaveClip = SaveClipHotkey.Trim();
         settings.Hotkeys.ToggleRecording = string.IsNullOrWhiteSpace(RecordHotkey) ? null : RecordHotkey.Trim();
+        settings.Presets = Presets.Select(p => SettingsFile.Clone(p.Data)).ToList();
+        settings.ActivePreset = (_defaultPreset ?? Presets[0]).Name.Trim();
         return settings;
     }
+
+    public void AddPresetGame(string? exe)
+    {
+        if (string.IsNullOrWhiteSpace(exe))
+        {
+            return;
+        }
+
+        List<string> games = SplitList(PresetGames);
+        if (!games.Contains(exe, StringComparer.OrdinalIgnoreCase))
+        {
+            games.Add(exe);
+            PresetGames = string.Join(", ", games);
+        }
+    }
+
+    private void LoadPreset(PresetItem item)
+    {
+        PresetSettings p = item.Data;
+        PresetGames = string.Join(", ", p.Games);
+        VideoEnabled = p.Video.Enabled;
+        CaptureWindow = !string.IsNullOrWhiteSpace(p.Video.Window);
+        Monitor = p.Video.Monitor;
+        Window = p.Video.Window ?? string.Empty;
+        Fps = p.Video.Fps;
+        BitrateMbps = p.Video.BitrateMbps;
+        MaxHeight = p.Video.MaxHeight ?? 0;
+        Encoder = (p.Video.Encoder ?? "auto").ToLowerInvariant();
+        Cursor = p.Video.Cursor;
+        Adapter = p.Video.Adapter;
+        AudioBitrate = p.Audio.BitrateKbps;
+        ReplayEnabled = p.Replay.Enabled;
+        BufferSeconds = p.Replay.BufferSeconds;
+        AlsoRecord = p.Replay.AlsoRecord;
+        Tracks.Clear();
+        foreach (TrackSettings track in p.Audio.Tracks)
+        {
+            Tracks.Add(new TrackEditor(this, track));
+        }
+
+        if (!Monitors.Any(m => m.Value == Monitor))
+        {
+            Monitors.Add(new Choice<int>(Monitor, $"Monitor {Monitor + 1} (not connected)"));
+        }
+    }
+
+    private void StorePreset(PresetItem item)
+    {
+        PresetSettings p = item.Data;
+        p.Name = item.Name.Trim();
+        p.Games = SplitList(PresetGames);
+        p.Video.Enabled = VideoEnabled;
+        p.Video.Monitor = Monitor;
+        p.Video.Window = CaptureWindow && !string.IsNullOrWhiteSpace(Window) ? Window.Trim() : null;
+        p.Video.Fps = Fps;
+        p.Video.BitrateMbps = BitrateMbps;
+        p.Video.MaxHeight = MaxHeight > 0 ? MaxHeight : null;
+        p.Video.Encoder = Encoder;
+        p.Video.Cursor = Cursor;
+        p.Video.Adapter = Adapter;
+        p.Audio.BitrateKbps = AudioBitrate;
+        p.Audio.Tracks = Tracks.Select(t => t.ToSettings()).ToList();
+        p.Replay.Enabled = ReplayEnabled;
+        p.Replay.BufferSeconds = BufferSeconds;
+        p.Replay.AlsoRecord = AlsoRecord;
+    }
+
+    /// <summary>A copy of the selected preset under a new name, without its games (a game switches to one preset only).</summary>
+    private void NewPreset()
+    {
+        if (_selectedPreset is null)
+        {
+            return;
+        }
+
+        StorePreset(_selectedPreset);
+        PresetSettings copy = SettingsFile.Clone(_selectedPreset.Data);
+        copy.Games = [];
+        for (int n = 2; ; n++)
+        {
+            copy.Name = $"Preset {n}";
+            if (!Presets.Any(p => RecorderSettings.NameEquals(p.Name, copy.Name)))
+            {
+                break;
+            }
+        }
+
+        var item = new PresetItem(copy);
+        Presets.Add(item);
+        SelectedPreset = item;
+    }
+
+    private void DeletePreset()
+    {
+        if (_selectedPreset is not { } deleted || Presets.Count <= 1)
+        {
+            return;
+        }
+
+        int index = Presets.IndexOf(deleted);
+        _selectedPreset = null;
+        Presets.Remove(deleted);
+        if (_defaultPreset == deleted)
+        {
+            _defaultPreset = Presets[0];
+        }
+
+        SelectedPreset = Presets[Math.Min(index, Presets.Count - 1)];
+    }
+
+    private static List<string> SplitList(string text) =>
+        text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
 
     private void Save()
     {
@@ -343,7 +514,8 @@ public sealed class SettingsViewModel : ObservableObject
             return;
         }
 
-        if (CaptureWindow && settings.Video.Window is null)
+        // Only the shown preset can have "One window" picked with nothing in the box.
+        if (CaptureWindow && _selectedPreset is not null && settings.Presets[Presets.IndexOf(_selectedPreset)].Video.Window is null)
         {
             ShowErrors(["Window: choose a window or program to capture, or capture a monitor."]);
             return;

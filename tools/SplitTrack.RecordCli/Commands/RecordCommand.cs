@@ -54,7 +54,7 @@ internal static class RecordCommand
     private static void PrintPlan(
         RecordingSession session, RecordingOptions recording, HotkeyGesture? hotkey, LibraryFolder library, RecordOptions options)
     {
-        Console.WriteLine($"Settings: {options.SettingsPath}{(options.SettingsFileExists ? string.Empty : " (not saved yet: defaults)")}");
+        Console.WriteLine($"Settings: {options.SettingsPath}{(options.SettingsFileExists ? string.Empty : " (not saved yet: defaults)")}, preset '{options.Settings.Active.Name}'");
         Console.WriteLine(session.VideoDescription is { } video ? $"Video: {video}" : "Video: none");
         foreach (AudioTrackOptions track in recording.AudioTracks)
         {

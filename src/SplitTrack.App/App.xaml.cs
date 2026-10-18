@@ -90,7 +90,7 @@ public partial class App : Application
         _library.SetRoot(settings.LibraryRoot);
         _library.OpenRequested += OpenPlayer;
 
-        _tray = new TrayIcon(ShowWindow, _recorder.SaveClip, _recorder.ToggleRecording, () => _recorder.SetReplayEnabled(!_recorder.ReplayEnabled), ExitApp);
+        _tray = new TrayIcon(ShowWindow, _recorder.SaveClip, _recorder.ToggleRecording, () => _recorder.SetReplayEnabled(!_recorder.ReplayEnabled), _recorder.SelectPreset, ExitApp);
         _recorder.Changed += () => Dispatcher.BeginInvoke(OnRecorderChanged);
         _recorder.Notice += notice => Dispatcher.BeginInvoke(() => ShowNotice(notice));
         _recorder.EntrySaved += _ => _library.RefreshSoon();
@@ -230,7 +230,9 @@ public partial class App : Application
             _recorder.HasReplayBuffer,
             _recorderViewModel.IsRecording,
             _recorder.SaveClipHotkey?.ToString(),
-            _recorder.RecordHotkey?.ToString());
+            _recorder.RecordHotkey?.ToString(),
+            _recorder.Settings.Presets.Select(p => p.Name).ToList(),
+            _recorder.Preset.Name);
     }
 
     private void ShowNotice(RecorderNotice notice)

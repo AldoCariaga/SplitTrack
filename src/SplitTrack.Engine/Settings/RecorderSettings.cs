@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json.Serialization;
+using SplitTrack.Capture.Audio.Sessions;
 using SplitTrack.Encode.Video;
 using SplitTrack.Engine.Input;
 using SplitTrack.Engine.Recording;
@@ -13,25 +14,58 @@ namespace SplitTrack.Engine.Settings;
 /// </summary>
 public sealed class RecorderSettings
 {
-    public const int CurrentVersion = 1;
+    /// <summary>Version 2 moved video, audio and replay into presets.</summary>
+    public const int CurrentVersion = 2;
+
+    public const string DefaultPresetName = "Default";
 
     public int Version { get; set; } = CurrentVersion;
 
     /// <summary>Where recordings and clips go; null means Videos\SplitTrack. %VARIABLES% are expanded.</summary>
     public string? LibraryFolder { get; set; }
 
-    public VideoSettings Video { get; set; } = new();
-
-    public AudioSettings Audio { get; set; } = new();
-
-    public ReplaySettings Replay { get; set; } = new();
-
     public HotkeySettings Hotkeys { get; set; } = new();
+
+    /// <summary>The preset in use while none of the presets' games runs; chosen by hand.</summary>
+    public string ActivePreset { get; set; } = DefaultPresetName;
+
+    public List<PresetSettings> Presets { get; set; } = [new()];
+
+    /// <summary>The <see cref="ActivePreset"/>, or the first one when that name is missing (see <see cref="Validate"/>).</summary>
+    [JsonIgnore]
+    public PresetSettings Active => Find(ActivePreset) ?? Presets[0];
+
+    /// <summary>The active preset's video settings.</summary>
+    [JsonIgnore]
+    public VideoSettings Video => Active.Video;
+
+    /// <summary>The active preset's audio settings.</summary>
+    [JsonIgnore]
+    public AudioSettings Audio => Active.Audio;
+
+    /// <summary>The active preset's replay settings.</summary>
+    [JsonIgnore]
+    public ReplaySettings Replay => Active.Replay;
 
     [JsonIgnore]
     public string LibraryRoot => string.IsNullOrWhiteSpace(LibraryFolder)
         ? LibraryFolderPaths.DefaultRoot
         : Path.GetFullPath(Environment.ExpandEnvironmentVariables(LibraryFolder.Trim()));
+
+    // Version 1 kept these at the top level; SettingsFile.Load moves them into a preset.
+    [JsonInclude, JsonPropertyName("video"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    internal VideoSettings? V1Video { get; set; }
+
+    [JsonInclude, JsonPropertyName("audio"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    internal AudioSettings? V1Audio { get; set; }
+
+    [JsonInclude, JsonPropertyName("replay"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    internal ReplaySettings? V1Replay { get; set; }
+
+    /// <summary>Null when there is no preset of that name (ignoring case and surrounding spaces).</summary>
+    public PresetSettings? Find(string? name) => Presets.FirstOrDefault(p => p is not null && NameEquals(p.Name, name));
+
+    public static bool NameEquals(string? a, string? b) => string.Equals(a?.Trim(), b?.Trim(), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Everything wrong with these settings, one message per problem, named by JSON path; empty when usable.</summary>
     public IReadOnlyList<string> Validate()
@@ -51,36 +85,111 @@ public sealed class RecorderSettings
             errors.Add($"libraryFolder: '{LibraryFolder}' is not a usable folder path ({ex.Message})");
         }
 
-        Video.Validate(errors);
-        Audio.Validate(errors);
-        Replay.Validate(errors);
         Hotkeys.Validate(errors);
-
-        if (!Video.Enabled && Audio.Tracks.Count == 0)
-        {
-            errors.Add("Nothing to record: video is off (video.enabled) and audio.tracks is empty.");
-        }
-
+        ValidatePresets(errors);
         return errors;
     }
 
     /// <param name="outputPath">The whole session as one MKV, or null for none.</param>
     /// <param name="replayBuffer">Keep a replay buffer that clips can be saved from.</param>
-    public RecordingOptions ToRecordingOptions(string? outputPath, bool replayBuffer) => new(
-        outputPath,
-        Video.ToOptions(),
-        Audio.ToOptions(),
-        Audio.BitrateKbps,
-        replayBuffer ? new ReplayOptions(Replay.BufferSeconds, LibraryRoot) : null);
+    /// <param name="preset">What to capture; null for the active preset.</param>
+    public RecordingOptions ToRecordingOptions(string? outputPath, bool replayBuffer, PresetSettings? preset = null)
+    {
+        preset ??= Active;
+        return new(
+            outputPath,
+            preset.Video.ToOptions(),
+            preset.Audio.ToOptions(),
+            preset.Audio.BitrateKbps,
+            replayBuffer ? new ReplayOptions(preset.Replay.BufferSeconds, LibraryRoot) : null);
+    }
+
+    /// <summary>The first preset one of whose games is running, with that game's exe name.</summary>
+    public (PresetSettings Preset, string Game)? FindRunningGame(ProcessTree tree)
+    {
+        foreach (PresetSettings preset in Presets)
+        {
+            if (preset.Games.FirstOrDefault(g => tree.FindByExe(g).Count > 0) is { } game)
+            {
+                return (preset, ProcessTree.NormalizeExeName(game));
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>Makes sections set to null in the file usable again (their defaults).</summary>
     internal void FillMissing()
     {
-        Video ??= new();
-        Audio ??= new();
-        Audio.Tracks ??= [];
-        Replay ??= new();
         Hotkeys ??= new();
+        Presets ??= [];
+        foreach (PresetSettings? preset in Presets)
+        {
+            preset?.FillMissing();
+        }
+    }
+
+    /// <summary>A version 1 file's top-level video, audio and replay become the only preset.</summary>
+    internal void UpgradeFromVersion1()
+    {
+        Presets = [new PresetSettings { Video = V1Video ?? new(), Audio = V1Audio ?? new(), Replay = V1Replay ?? new() }];
+        ActivePreset = DefaultPresetName;
+        V1Video = null;
+        V1Audio = null;
+        V1Replay = null;
+    }
+
+    /// <summary>Top-level video, audio or replay in a file of version 2 or later, which belong in a preset.</summary>
+    internal bool HasVersion1Sections => V1Video is not null || V1Audio is not null || V1Replay is not null;
+
+    private void ValidatePresets(List<string> errors)
+    {
+        if (Presets.Count == 0)
+        {
+            errors.Add("presets: there must be at least one preset");
+            return;
+        }
+
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var gameOwners = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < Presets.Count; i++)
+        {
+            if (Presets[i] is not { } preset)
+            {
+                errors.Add($"presets[{i}]: is empty");
+                continue;
+            }
+
+            string name = preset.Name?.Trim() ?? string.Empty;
+            if (name.Length == 0)
+            {
+                errors.Add($"presets[{i}].name: is missing");
+            }
+            else if (!names.Add(name))
+            {
+                errors.Add($"presets[{i}].name: '{name}' is used by another preset; names must be unique");
+            }
+
+            // With one preset its name adds nothing to the messages.
+            var presetErrors = new List<string>();
+            preset.Validate(presetErrors);
+            errors.AddRange(Presets.Count == 1 ? presetErrors : presetErrors.Select(e => $"preset '{name}': {e}"));
+
+            foreach (string game in preset.Games.Where(g => !string.IsNullOrWhiteSpace(g)).Select(g => ProcessTree.NormalizeExeName(g.Trim())))
+            {
+                if (gameOwners.TryGetValue(game, out string? owner) && !NameEquals(owner, name))
+                {
+                    errors.Add($"preset '{name}': games: {game} is also in preset '{owner}'; a game can switch to one preset only");
+                }
+
+                gameOwners.TryAdd(game, name);
+            }
+        }
+
+        if (Find(ActivePreset) is null)
+        {
+            errors.Add($"activePreset: there is no preset named '{ActivePreset}'");
+        }
     }
 
     internal static void CheckRange(List<string> errors, string name, double value, Limit limit)
@@ -88,6 +197,47 @@ public sealed class RecorderSettings
         if (!limit.Contains(value))
         {
             errors.Add(string.Create(CultureInfo.InvariantCulture, $"{name}: must be from {limit.Min} to {limit.Max}, got {value}"));
+        }
+    }
+}
+
+/// <summary>A named capture setup: video, audio tracks and the replay buffer, and the games that switch to it.</summary>
+public sealed class PresetSettings
+{
+    public string Name { get; set; } = RecorderSettings.DefaultPresetName;
+
+    /// <summary>Exe names; while one of them runs, the app uses this preset. Empty: chosen by hand only.</summary>
+    public List<string> Games { get; set; } = [];
+
+    public VideoSettings Video { get; set; } = new();
+
+    public AudioSettings Audio { get; set; } = new();
+
+    public ReplaySettings Replay { get; set; } = new();
+
+    internal void FillMissing()
+    {
+        Games ??= [];
+        Video ??= new();
+        Audio ??= new();
+        Audio.Tracks ??= [];
+        Replay ??= new();
+    }
+
+    internal void Validate(List<string> errors)
+    {
+        Video.Validate(errors);
+        Audio.Validate(errors);
+        Replay.Validate(errors);
+
+        if (!Video.Enabled && Audio.Tracks.Count == 0)
+        {
+            errors.Add("Nothing to record: video is off (video.enabled) and audio.tracks is empty.");
+        }
+
+        if (Games.Any(AudioTrackOptions.IsFullScreen))
+        {
+            errors.Add($"games: '{AudioTrackOptions.FullScreen}' only works in a game track; list exe names here");
         }
     }
 }

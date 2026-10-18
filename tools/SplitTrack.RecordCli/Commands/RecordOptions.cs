@@ -40,6 +40,7 @@ internal sealed class RecordOptions
     {
         string path = Path.GetFullPath(FindSettingsPath(args) ?? SettingsFile.DefaultPath);
         var options = new RecordOptions(command, path, SettingsFile.Load(path));
+        options.UsePreset(args);
         options.Apply(args);
 
         IReadOnlyList<string> errors = options.Settings.Validate();
@@ -61,6 +62,38 @@ internal sealed class RecordOptions
         $"These settings cannot be used ({path}{(withCommandLine ? " plus the command line" : string.Empty)}):{Environment.NewLine}" +
         string.Join(Environment.NewLine, errors.Select(e => $"  {e}"));
 
+    /// <summary>
+    /// --preset makes that preset the active one, before the other options change it. 'settings save'
+    /// creates a new name as a copy of the active preset (without its games); record and replay refuse it.
+    /// </summary>
+    private void UsePreset(string[] args)
+    {
+        int at = Array.FindIndex(args, a => a.Equals("--preset", StringComparison.OrdinalIgnoreCase));
+        if (at < 0)
+        {
+            return;
+        }
+
+        string name = Value(args, ref at, "--preset").Trim();
+        RecorderSettings s = Settings;
+        if (s.Find(name) is { } preset)
+        {
+            s.ActivePreset = preset.Name;
+            return;
+        }
+
+        if (Command != CliCommand.SaveSettings)
+        {
+            throw new UsageException($"There is no preset named '{name}' (there are: {string.Join(", ", s.Presets.Select(p => p.Name))}).");
+        }
+
+        PresetSettings copy = SettingsFile.Clone(s.Active);
+        copy.Name = name;
+        copy.Games = [];
+        s.Presets.Add(copy);
+        s.ActivePreset = name;
+    }
+
     private void Apply(string[] args)
     {
         RecorderSettings s = Settings;
@@ -77,6 +110,7 @@ internal sealed class RecordOptions
             switch (arg.ToLowerInvariant())
             {
                 case "--settings":
+                case "--preset":
                     i++;
                     break;
                 case "--monitor":

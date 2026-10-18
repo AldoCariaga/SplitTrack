@@ -36,6 +36,9 @@ internal static class Program
           run. Defaults below are those of a new settings file.
 
           Options for record, replay and settings save
+            Preset
+              --preset <name>           Use this preset (default: the active one). With settings save it
+                                        becomes the active one; a new name starts as a copy of the active one
             Video
               --monitor <n>             Capture monitor n from 'list' (default 0, the primary)
               --window <hwnd|exe|text>  Capture a window instead

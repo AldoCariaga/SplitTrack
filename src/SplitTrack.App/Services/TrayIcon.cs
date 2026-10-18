@@ -20,21 +20,26 @@ public sealed class TrayIcon : IDisposable
     private readonly ToolStripMenuItem _saveClip;
     private readonly ToolStripMenuItem _record;
     private readonly ToolStripMenuItem _replay;
+    private readonly ToolStripMenuItem _presets;
+    private readonly Action<string> _selectPreset;
     private readonly Dictionary<TrayState, Icon> _icons;
     private Action? _balloonClick;
 
-    public TrayIcon(Action open, Action saveClip, Action toggleRecording, Action toggleReplay, Action exit)
+    public TrayIcon(Action open, Action saveClip, Action toggleRecording, Action toggleReplay, Action<string> selectPreset, Action exit)
     {
         _icons = Enum.GetValues<TrayState>().ToDictionary(s => s, Draw);
+        _selectPreset = selectPreset;
         _saveClip = new ToolStripMenuItem("Save clip", null, (_, _) => saveClip());
         _record = new ToolStripMenuItem("Start recording", null, (_, _) => toggleRecording());
         _replay = new ToolStripMenuItem("Replay buffer", null, (_, _) => toggleReplay());
+        _presets = new ToolStripMenuItem("Preset") { Visible = false };
         var menu = new ContextMenuStrip();
         menu.Items.Add(new ToolStripMenuItem("Open SplitTrack", null, (_, _) => open()) { Font = new Font(menu.Font, System.Drawing.FontStyle.Bold) });
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_saveClip);
         menu.Items.Add(_record);
         menu.Items.Add(_replay);
+        menu.Items.Add(_presets);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("Exit", null, (_, _) => exit()));
 
@@ -50,7 +55,11 @@ public sealed class TrayIcon : IDisposable
     }
 
     /// <param name="tooltip">At most 127 characters; longer text is cut.</param>
-    public void Update(TrayState state, string tooltip, bool replayOn, bool canSaveClip, bool recording, string? saveHotkey, string? recordHotkey)
+    /// <param name="presets">All preset names; the submenu shows only when there are several.</param>
+    /// <param name="preset">The preset in use, which is ticked.</param>
+    public void Update(
+        TrayState state, string tooltip, bool replayOn, bool canSaveClip, bool recording, string? saveHotkey, string? recordHotkey,
+        IReadOnlyList<string> presets, string preset)
     {
         _icon.Icon = _icons[state];
         _icon.Text = tooltip.Length > 127 ? tooltip[..127] : tooltip;
@@ -59,6 +68,21 @@ public sealed class TrayIcon : IDisposable
         _record.Text = recording ? "Stop recording" : "Start recording";
         _record.ShortcutKeyDisplayString = recordHotkey;
         _replay.Checked = replayOn;
+
+        _presets.Visible = presets.Count > 1;
+        if (!presets.SequenceEqual(_presets.DropDownItems.Cast<ToolStripItem>().Select(i => i.Text)))
+        {
+            _presets.DropDownItems.Clear();
+            foreach (string name in presets)
+            {
+                _presets.DropDownItems.Add(new ToolStripMenuItem(name, null, (_, _) => _selectPreset(name)));
+            }
+        }
+
+        foreach (ToolStripMenuItem item in _presets.DropDownItems.OfType<ToolStripMenuItem>())
+        {
+            item.Checked = string.Equals(item.Text, preset, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     /// <param name="clicked">Runs when the balloon is clicked.</param>

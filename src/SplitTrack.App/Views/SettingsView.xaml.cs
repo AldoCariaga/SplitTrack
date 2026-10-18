@@ -98,6 +98,29 @@ public partial class SettingsView : UserControl
         }
     }
 
+    private void OnPickPresetGame(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm || sender is not Button button)
+        {
+            return;
+        }
+
+        var menu = new ContextMenu { PlacementTarget = button };
+        if (vm.Programs.Count == 0)
+        {
+            menu.Items.Add(new MenuItem { Header = "Nothing found; type the name instead", IsEnabled = false });
+        }
+
+        foreach (string program in vm.Programs)
+        {
+            var item = new MenuItem { Header = program };
+            item.Click += (_, _) => vm.AddPresetGame(program);
+            menu.Items.Add(item);
+        }
+
+        menu.IsOpen = true;
+    }
+
     private void OnPickTarget(object sender, RoutedEventArgs e)
     {
         if (sender is not Button { DataContext: TrackEditor track } button)

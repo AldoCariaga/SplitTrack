@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using SplitTrack.Capture.Audio.Sessions;
 using SplitTrack.Common.Diagnostics;
 using SplitTrack.Common.Time;
 using SplitTrack.Engine.Input;
@@ -47,10 +48,18 @@ public sealed class RecorderService : IDisposable
     private string? _recordingPath;
     private bool _disposed;
 
+    // The preset the session runs (or will, once a recording ends), and the game that chose it, if one did.
+    private string _presetName;
+    private string? _presetGame;
+
+    // The preset whose game was running at the last check; switching happens only when this changes.
+    private string? _gamePreset;
+
     public RecorderService(string settingsPath, RecorderSettings settings)
     {
         SettingsPath = settingsPath;
         _settings = settings;
+        _presetName = settings.Active.Name;
         _worker = new Thread(Work) { IsBackground = true, Name = "SplitTrack recorder" };
         _worker.Start();
         _watchdog = new Timer(_ => Post(Watch), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
@@ -101,7 +110,31 @@ public sealed class RecorderService : IDisposable
         }
     }
 
-    public bool ReplayEnabled => Settings.Replay.Enabled;
+    /// <summary>The preset in use: the active one, or the one whose game is running.</summary>
+    public PresetSettings Preset
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _settings.Find(_presetName) ?? _settings.Active;
+            }
+        }
+    }
+
+    /// <summary>The exe whose running chose <see cref="Preset"/>; null when it was chosen by hand.</summary>
+    public string? PresetGame
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _presetGame;
+            }
+        }
+    }
+
+    public bool ReplayEnabled => Preset.Replay.Enabled;
 
     public bool HasReplayBuffer
     {
@@ -164,6 +197,7 @@ public sealed class RecorderService : IDisposable
     public void Start() => Post(() =>
     {
         RegisterHotkeys();
+        FollowGames();
         Reconcile();
     });
 
@@ -185,10 +219,11 @@ public sealed class RecorderService : IDisposable
         Reconcile();
     });
 
+    /// <summary>Turns the replay buffer of the preset in use on or off, and saves that.</summary>
     public void SetReplayEnabled(bool enabled)
     {
         RecorderSettings settings = SettingsFile.Clone(Settings);
-        settings.Replay.Enabled = enabled;
+        (settings.Find(Preset.Name) ?? settings.Active).Replay.Enabled = enabled;
         try
         {
             SettingsFile.Save(SettingsPath, settings);
@@ -209,7 +244,7 @@ public sealed class RecorderService : IDisposable
         {
             lock (_gate)
             {
-                _restartPending |= _session is not null && _session.HasReplayBuffer != _settings.Replay.Enabled;
+                _restartPending |= _session is not null && _session.HasReplayBuffer != (_settings.Find(_presetName) ?? _settings.Active).Replay.Enabled;
             }
 
             Reconcile();
@@ -235,14 +270,52 @@ public sealed class RecorderService : IDisposable
                 _restartPending = _session is not null;
                 _error = null;
                 _retry = false;
+
+                // Start over from the active preset; FollowGames below picks a running game's preset again.
+                _presetName = settings.Active.Name;
+                _presetGame = null;
+                _gamePreset = null;
             }
 
             RegisterHotkeys();
+            FollowGames(notify: false);
             if (IsRecording)
             {
                 Notify("Settings saved", "They apply when the recording stops.", false);
             }
 
+            Reconcile();
+        });
+    }
+
+    /// <summary>Makes <paramref name="name"/> the active preset, saves that, and switches to it (once a running recording ends).</summary>
+    public void SelectPreset(string name)
+    {
+        RecorderSettings settings = SettingsFile.Clone(Settings);
+        if (settings.Find(name) is not { } preset)
+        {
+            return;
+        }
+
+        settings.ActivePreset = preset.Name;
+        try
+        {
+            SettingsFile.Save(SettingsPath, settings);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log.Warn("Could not save the active preset", ex);
+        }
+
+        Post(() =>
+        {
+            lock (_gate)
+            {
+                _settings = settings;
+            }
+
+            // A game still running keeps its edge state, so the choice is not undone until it closes.
+            SwitchPreset(preset.Name, null, notify: false);
             Reconcile();
         });
     }
@@ -317,7 +390,8 @@ public sealed class RecorderService : IDisposable
     private void Reconcile()
     {
         RecorderSettings settings = Settings;
-        bool needSession = settings.Replay.Enabled || _wantRecording;
+        PresetSettings preset = Preset;
+        bool needSession = preset.Replay.Enabled || _wantRecording;
         RecordingSession? session;
         lock (_gate)
         {
@@ -339,7 +413,7 @@ public sealed class RecorderService : IDisposable
         // After a failure only setup problems are retried (Watch paces that); anything else waits for a change.
         if (session is null && needSession && (Error is null || retry))
         {
-            session = OpenSession(settings);
+            session = OpenSession(settings, preset);
         }
 
         if (session is not null)
@@ -374,13 +448,13 @@ public sealed class RecorderService : IDisposable
         Changed?.Invoke();
     }
 
-    private RecordingSession? OpenSession(RecorderSettings settings)
+    private RecordingSession? OpenSession(RecorderSettings settings, PresetSettings preset)
     {
         SetState(RecorderState.Starting, null);
         RecordingSession? session = null;
         try
         {
-            session = RecordingSession.Open(settings.ToRecordingOptions(null, settings.Replay.Enabled));
+            session = RecordingSession.Open(settings.ToRecordingOptions(null, preset.Replay.Enabled, preset));
             session.ClipSaved += OnClipSaved;
             session.RecordingSaved += OnRecordingSaved;
             session.Start();
@@ -393,7 +467,7 @@ public sealed class RecorderService : IDisposable
                 _restartPending = false;
             }
 
-            Log.Info($"App session started: {session.VideoDescription ?? "audio only"}, replay {(session.HasReplayBuffer ? "on" : "off")}");
+            Log.Info($"App session started: preset '{preset.Name}', {session.VideoDescription ?? "audio only"}, replay {(session.HasReplayBuffer ? "on" : "off")}");
             return session;
         }
         catch (Exception ex)
@@ -470,9 +544,14 @@ public sealed class RecorderService : IDisposable
         Changed?.Invoke();
     }
 
-    /// <summary>Once a second: ends a session whose video stopped, retries one that could not start.</summary>
+    /// <summary>Once a second: follows games to their presets, ends a session whose video stopped, retries one that could not start.</summary>
     private void Watch()
     {
+        if (FollowGames())
+        {
+            Reconcile();
+        }
+
         RecordingSession? session;
         lock (_gate)
         {
@@ -482,7 +561,7 @@ public sealed class RecorderService : IDisposable
         if (session is not null && session.VideoStopped)
         {
             string reason = session.VideoClosed ? "The captured window closed." : "Video encoding failed; see the log.";
-            bool windowCapture = !string.IsNullOrWhiteSpace(Settings.Video.Window);
+            bool windowCapture = !string.IsNullOrWhiteSpace(Preset.Video.Window);
             Log.Info($"App session ends: {reason}");
             _wantRecording = false;
             CloseSession();
@@ -508,6 +587,64 @@ public sealed class RecorderService : IDisposable
         {
             Reconcile();
         }
+    }
+
+    /// <summary>
+    /// Switches to the preset whose game just started, and back to the active preset when it closes.
+    /// Acts only on a change, so a preset chosen by hand meanwhile stays. True when it switched.
+    /// </summary>
+    private bool FollowGames(bool notify = true)
+    {
+        RecorderSettings settings = Settings;
+        (PresetSettings Preset, string Game)? running = settings.Presets.Any(p => p.Games.Count > 0)
+            ? settings.FindRunningGame(ProcessTree.Snapshot())
+            : null;
+
+        string? wanted = running?.Preset.Name;
+        lock (_gate)
+        {
+            if (RecorderSettings.NameEquals(wanted, _gamePreset))
+            {
+                return false;
+            }
+
+            _gamePreset = wanted;
+        }
+
+        return SwitchPreset(wanted ?? settings.Active.Name, running?.Game, notify);
+    }
+
+    /// <summary>Runs <paramref name="name"/> from now on; the session restarts with it once no recording is running.</summary>
+    private bool SwitchPreset(string name, string? game, bool notify)
+    {
+        bool changed;
+        bool recording;
+        lock (_gate)
+        {
+            changed = !RecorderSettings.NameEquals(_presetName, name);
+            _presetName = name;
+            _presetGame = game;
+            recording = _session?.IsRecording ?? false;
+            if (changed)
+            {
+                _restartPending = _session is not null;
+                _error = null;
+                _retry = false;
+            }
+        }
+
+        if (changed)
+        {
+            Log.Info($"Preset '{name}'{(game is null ? string.Empty : $" ({game} is running)")}");
+            if (notify)
+            {
+                string why = game is null ? "No preset's game is running." : $"{game} is running.";
+                Notify($"Preset: {name}", recording ? $"{why} It applies when the recording stops." : why, false);
+            }
+        }
+
+        Changed?.Invoke();
+        return changed;
     }
 
     private void RegisterHotkeys()
