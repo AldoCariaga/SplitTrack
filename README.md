@@ -79,8 +79,8 @@ finish. Uninstalling removes the program and the Start with Windows entry, and k
 
 ## The app
 
-Start `SplitTrack.exe`. It sits in the notification area (the tray icon is grey when idle, green
-while the replay buffer runs, red while recording, orange when capture failed); closing the
+Start `SplitTrack.exe`. It sits in the notification area (the tray icon is the plain logo when
+idle, with a green dot while the replay buffer runs, red while recording, orange when capture failed); closing the
 window keeps it running there, and Exit is in the tray icon's menu.
 
 - **Top of the window**: what is being captured, one level meter per audio track with what it is

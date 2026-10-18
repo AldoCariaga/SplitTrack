@@ -7,6 +7,8 @@
     <!-- Only for the tray icon (NotifyIcon) and the recycle bin. -->
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- The exe's icon is also the windows' and taskbar's; tools\make-icon.ps1 draws it. -->
+    <ApplicationIcon>Assets\SplitTrack.ico</ApplicationIcon>
     <!-- Also the installer's version (installer\SplitTrack.iss reads it from the exe). -->
     <Version>0.7.0</Version>
     <FFmpegExe>true</FFmpegExe>
@@ -29,6 +31,11 @@
     <Using Remove="System.Windows.Forms" />
     <Using Remove="System.Drawing" />
     <Using Include="System.IO" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The tray loads it too, at the taskbar's icon size. -->
+    <EmbeddedResource Include="Assets\SplitTrack.ico" LogicalName="SplitTrack.ico" />
   </ItemGroup>
 
   <ItemGroup>

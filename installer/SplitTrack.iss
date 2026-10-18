@@ -30,6 +30,7 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 LZMAUseSeparateProcess=yes
 WizardStyle=modern
+SetupIconFile=..\src\SplitTrack.App\Assets\SplitTrack.ico
 UninstallDisplayIcon={app}\{#AppExe}
 UninstallDisplayName={#AppName}
 ; The [Code] section closes a running copy with --exit instead.

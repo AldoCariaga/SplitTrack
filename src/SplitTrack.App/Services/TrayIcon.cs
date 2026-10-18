@@ -13,7 +13,7 @@ public enum TrayState
     Error,
 }
 
-/// <summary>The notification-area icon and its menu (WinForms NotifyIcon; the icons are drawn, not shipped).</summary>
+/// <summary>The notification-area icon and its menu (WinForms NotifyIcon showing the app logo).</summary>
 public sealed class TrayIcon : IDisposable
 {
     private readonly NotifyIcon _icon;
@@ -79,49 +79,38 @@ public sealed class TrayIcon : IDisposable
         }
     }
 
-    /// <summary>A rounded "split track" mark: three bars, tinted by state, with a dot for recording.</summary>
+    /// <summary>The app logo at the tray's icon size, with a dot in the state's colour unless idle.</summary>
     private static Icon Draw(TrayState state)
     {
-        const int size = 32;
-        using var bitmap = new Bitmap(size, size);
+        Size size = SystemInformation.SmallIconSize;
+        using Stream stream = typeof(TrayIcon).Assembly.GetManifestResourceStream("SplitTrack.ico")!;
+        using var logo = new Icon(stream, size);
+        using var bitmap = new Bitmap(size.Width, size.Height);
         using (Graphics g = Graphics.FromImage(bitmap))
         {
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            Color bars = state switch
+            g.DrawIcon(logo, new Rectangle(Point.Empty, size));
+            Color? dot = state switch
             {
                 TrayState.Replay => Color.FromArgb(0x2E, 0xCC, 0x71),
                 TrayState.Recording => Color.FromArgb(0xE7, 0x4C, 0x3C),
                 TrayState.Error => Color.FromArgb(0xF3, 0x9C, 0x12),
-                _ => Color.FromArgb(0x9A, 0xA0, 0xA6),
+                _ => null,
             };
-            using var brush = new SolidBrush(bars);
-            int[] heights = [14, 24, 18];
-            for (int i = 0; i < heights.Length; i++)
+            if (dot is { } color)
             {
-                using GraphicsPath bar = RoundedBar(4 + (i * 9), size - 4 - heights[i], 6, heights[i]);
-                g.FillPath(brush, bar);
-            }
-
-            if (state == TrayState.Recording)
-            {
-                using var dot = new SolidBrush(Color.White);
-                using var ring = new Pen(bars, 2);
-                g.FillEllipse(dot, 19, 1, 12, 12);
-                g.DrawEllipse(ring, 19, 1, 12, 12);
+                // A white ring keeps the dot readable on the indigo tile.
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                float diameter = size.Width * 0.55f;
+                float ring = Math.Max(1f, size.Width / 16f);
+                var outer = new RectangleF(size.Width - diameter, size.Height - diameter, diameter, diameter);
+                using var white = new SolidBrush(Color.White);
+                using var fill = new SolidBrush(color);
+                g.FillEllipse(white, outer);
+                g.FillEllipse(fill, RectangleF.Inflate(outer, -ring, -ring));
             }
         }
 
         return Icon.FromHandle(bitmap.GetHicon());
-    }
-
-    private static GraphicsPath RoundedBar(int x, int y, int width, int height)
-    {
-        var path = new GraphicsPath();
-        path.AddArc(x, y, width, width, 180, 180);
-        path.AddLine(x + width, y + (width / 2), x + width, y + height - (width / 2));
-        path.AddArc(x, y + height - width, width, width, 0, 180);
-        path.CloseFigure();
-        return path;
     }
 
     [DllImport("user32.dll")]
