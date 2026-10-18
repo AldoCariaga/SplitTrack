@@ -13,7 +13,9 @@ namespace SplitTrack.Engine.Audio;
 /// <param name="CreationTime">That process's creation time, to tell a reused PID apart.</param>
 /// <param name="DeviceId">Endpoint ID for a microphone.</param>
 /// <param name="Name">What the library shows as the track's source: exe name or device name.</param>
-internal sealed record SourceIdentity(string Description, int? Pid = null, long? CreationTime = null, string? DeviceId = null, string? Name = null);
+/// <param name="FullScreen">Found as the full-screen program rather than by name.</param>
+internal sealed record SourceIdentity(
+    string Description, int? Pid = null, long? CreationTime = null, string? DeviceId = null, string? Name = null, bool FullScreen = false);
 
 /// <summary>
 /// One audio track of the recording: a fixed aligner → AAC chain, fed by whichever source is

@@ -1,6 +1,7 @@
 using SplitTrack.Capture.Audio;
 using SplitTrack.Capture.Audio.Sessions;
 using SplitTrack.Capture.Audio.Wasapi;
+using SplitTrack.Capture.Video;
 using SplitTrack.Common.Audio;
 using SplitTrack.Common.Diagnostics;
 using SplitTrack.Common.Time;
@@ -21,8 +22,18 @@ internal sealed class SourceWatcher : IDisposable
     // Pause before retrying a source that failed to open or faulted.
     private static readonly long RetryTicks = QpcClock.MillisecondsToTicks(2_000);
 
+    // Programs that go full screen without being games: the desktop and shell, and browsers playing video.
+    private static readonly HashSet<string> NotGames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "explorer.exe", "LockApp.exe", "ShellExperienceHost.exe", "StartMenuExperienceHost.exe", "SearchHost.exe",
+        "ApplicationFrameHost.exe", "chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "vivaldi.exe",
+    };
+
     private readonly IReadOnlyList<AudioTrack> _tracks;
     private readonly AudioTrack? _game;
+
+    // Exe names app tracks record, e.g. Discord full screen during a stream is not the game.
+    private readonly HashSet<string> _appExes;
     private readonly AudioDeviceWatcher? _devices;
     private readonly Dictionary<AudioTrack, long> _retryAt = [];
     private readonly ManualResetEventSlim _stop = new();
@@ -33,6 +44,12 @@ internal sealed class SourceWatcher : IDisposable
     {
         _tracks = tracks;
         _game = tracks.FirstOrDefault(t => t.Options.Kind == AudioTrackKind.Game);
+        _appExes = tracks
+            .Where(t => t.Options.Kind == AudioTrackKind.App)
+            .SelectMany(t => t.Options.Targets)
+            .Where(t => !int.TryParse(t, out _))
+            .Select(ProcessTree.NormalizeExeName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (tracks.Any(t => t.Options.Kind == AudioTrackKind.Microphone))
         {
             _devices = AudioDeviceWatcher.Start();
@@ -109,8 +126,15 @@ internal sealed class SourceWatcher : IDisposable
 
     private void ReconcileProcess(AudioTrack track, ProcessTree tree, long now)
     {
-        // A running target is kept even if an earlier one in the list starts later.
-        if (track.Identity is { } current && track.Fault is null && IsAlive(current, tree))
+        IReadOnlyList<string> targets = track.Options.Targets;
+        ProcessEntry? fullScreen = track.Options.Kind == AudioTrackKind.Game && targets.Any(AudioTrackOptions.IsFullScreen)
+            ? FindFullScreenGame(tree)
+            : null;
+
+        // A running target is kept even if an earlier one in the list starts later; a detected one
+        // gives way only when another program takes over the screen.
+        if (track.Identity is { } current && track.Fault is null && IsAlive(current, tree) &&
+            !(current.FullScreen && fullScreen is not null && fullScreen.Pid != current.Pid))
         {
             return;
         }
@@ -120,7 +144,18 @@ internal sealed class SourceWatcher : IDisposable
             return;
         }
 
-        ProcessEntry? target = track.Options.Targets.Select(spec => ProcessResolver.Resolve(spec, tree)).FirstOrDefault(p => p is not null);
+        ProcessEntry? target = null;
+        bool detected = false;
+        foreach (string spec in targets)
+        {
+            detected = AudioTrackOptions.IsFullScreen(spec);
+            target = detected ? fullScreen : ProcessResolver.Resolve(spec, tree);
+            if (target is not null)
+            {
+                break;
+            }
+        }
+
         if (target is null)
         {
             track.Detach();
@@ -128,8 +163,23 @@ internal sealed class SourceWatcher : IDisposable
         }
 
         var identity = new SourceIdentity(
-            $"{target.ExeName} (pid {target.Pid} tree)", target.Pid, tree.GetCreationTime(target.Pid), Name: target.ExeName);
+            $"{target.ExeName} (pid {target.Pid} tree{(detected ? ", full screen" : "")})", target.Pid, tree.GetCreationTime(target.Pid),
+            Name: target.ExeName, FullScreen: detected);
         Attach(track, ProcessLoopbackSource.Open(track.Title, target.Pid, includeTree: true, AudioFormat.Float48Stereo), identity, now);
+    }
+
+    /// <summary>The root process of the full-screen window in front, unless it is a known non-game or an app track's.</summary>
+    private ProcessEntry? FindFullScreenGame(ProcessTree tree)
+    {
+        if (CaptureTargets.FindFullScreenWindow(tree) is not { } window ||
+            window.Pid == Environment.ProcessId ||
+            NotGames.Contains(window.ExeName) ||
+            _appExes.Contains(window.ExeName))
+        {
+            return null;
+        }
+
+        return tree.Get(tree.FindRoot(window.Pid));
     }
 
     private void ReconcileSystem(AudioTrack track, ProcessTree tree, long now)

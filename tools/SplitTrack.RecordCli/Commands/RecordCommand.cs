@@ -60,7 +60,7 @@ internal static class RecordCommand
         {
             string what = track.Kind switch
             {
-                AudioTrackKind.Game => $"process tree of {string.Join(" or ", track.Targets)} (the game)",
+                AudioTrackKind.Game => $"process tree of {string.Join(" or ", track.Targets.Select(t => AudioTrackOptions.IsFullScreen(t) ? "the full-screen program" : t))} (the game)",
                 AudioTrackKind.App => $"process tree of {string.Join(" or ", track.Targets)}",
                 AudioTrackKind.Microphone => track.Targets.Count == 0
                     ? "default microphone"

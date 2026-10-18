@@ -4,6 +4,7 @@ using System.Windows.Input;
 using Microsoft.Win32;
 using SplitTrack.App.ViewModels;
 using SplitTrack.Engine.Input;
+using SplitTrack.Engine.Recording;
 
 namespace SplitTrack.App.Views;
 
@@ -105,6 +106,14 @@ public partial class SettingsView : UserControl
         }
 
         var menu = new ContextMenu { PlacementTarget = button };
+        if (track.Kind == AudioTrackKind.Game)
+        {
+            var auto = new MenuItem { Header = $"Full-screen game ({AudioTrackOptions.FullScreen})" };
+            auto.Click += (_, _) => track.AddSuggestionCommand.Execute(AudioTrackOptions.FullScreen);
+            menu.Items.Add(auto);
+            menu.Items.Add(new Separator());
+        }
+
         if (track.Suggestions.Count == 0)
         {
             menu.Items.Add(new MenuItem { Header = "Nothing found; type the name instead", IsEnabled = false });

@@ -181,6 +181,7 @@ public sealed class AudioSettings
     /// <summary>In the order they appear in the file; the first one is what plain players play.</summary>
     public List<TrackSettings> Tracks { get; set; } =
     [
+        new() { Title = "Game", Kind = AudioTrackKind.Game, Processes = [AudioTrackOptions.FullScreen] },
         new() { Title = "Mic", Kind = AudioTrackKind.Microphone },
         new() { Title = "System", Kind = AudioTrackKind.System },
     ];
@@ -225,7 +226,7 @@ public sealed class TrackSettings
     /// <summary>game, app, microphone or system; required.</summary>
     public AudioTrackKind? Kind { get; set; }
 
-    /// <summary>Game / app: exe names or PIDs; the first one running is recorded.</summary>
+    /// <summary>Game / app: exe names or PIDs; the first one running is recorded. Game: "auto" is the full-screen program.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<string>? Processes { get; set; }
 
@@ -267,6 +268,11 @@ public sealed class TrackSettings
         if (!process && Clean(Processes).Count > 0)
         {
             errors.Add($"{name}.processes: only game and app tracks record processes");
+        }
+
+        if (kind == AudioTrackKind.App && Clean(Processes).Any(AudioTrackOptions.IsFullScreen))
+        {
+            errors.Add($"{name}.processes: '{AudioTrackOptions.FullScreen}' (the full-screen game) is only for the game track");
         }
 
         if (kind != AudioTrackKind.Microphone && Clean(Devices).Count > 0)

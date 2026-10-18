@@ -125,7 +125,7 @@ SplitTrack.RecordCli settings save [options of record and replay, except --secon
 
 `record` and `replay` start from `%LOCALAPPDATA%\SplitTrack\settings.json` (or `--settings <file>`);
 options on the command line override it for that run only. Without a file the defaults apply:
-primary monitor at 60 fps and 20 Mbps, encoder auto, tracks Mic and System, a 60 s buffer, Alt+F10.
+primary monitor at 60 fps and 20 Mbps, encoder auto, tracks Game (`auto`), Mic and System, a 60 s buffer, Alt+F10.
 `settings` prints what is in effect; `settings save <options>` writes options into the file, e.g.
 
 ```
@@ -154,7 +154,7 @@ out-of-range values are reported with their line and name):
   "audio": {
     "bitrateKbps": 160,
     "tracks": [                          // in this order in the file
-      { "title": "Game", "kind": "game", "processes": ["VALORANT-Win64-Shipping.exe", "cs2.exe"] },
+      { "title": "Game", "kind": "game", "processes": ["VALORANT-Win64-Shipping.exe", "auto"] },
       { "title": "Discord", "kind": "app", "processes": ["Discord.exe"] },
       { "title": "Mic", "kind": "microphone", "devices": ["Tamago"] },   // no devices: default mic
       { "title": "System", "kind": "system" }
@@ -183,13 +183,19 @@ audio track:
 
 | Kind (option) | Track title | What it records |
 |---|---|---|
-| `game` (`--game X,Y`) | `Game` | The first of the process trees X, Y that is running. It may start after the recording and restart during it. At most one |
+| `game` (`--game X,Y`) | `Game` | The first of the process trees X, Y that is running. It may start after the recording and restart during it. `auto` stands for the program that is full screen in front (see below). At most one |
 | `app` (`--app Title=X`, repeatable) | `Title` | Same rules, e.g. `--app Discord=Discord.exe` |
 | `microphone` (`--mic [name,...]`) | `Mic` | Default microphone, or the first present whose name contains one of the names; follows device changes and replugs |
 | `system` (`--system`) | `System` | Everything except the game (everything while no game runs). At most one |
 
 A process list is tried in order only while nothing is captured: a running game is kept even if
 one earlier in the list starts later.
+
+`auto` (the default Game track) picks the program whose window is in front and covers its whole
+monitor: exclusive and borderless full screen count, a maximized window does not. It stays the game
+while it runs, also after Alt+Tab, until another program goes full screen in front or it exits. The
+desktop, browsers (full-screen video) and programs named by an App track are never picked; name a
+game that runs in a window, or that one of those programs runs, in the list instead.
 
 All tracks start and end on the same instant; a track whose source is quiet, absent or restarting
 is filled with silence. Each source's clock is gently resampled to the recording clock, so long
@@ -295,7 +301,8 @@ Logs: `%LOCALAPPDATA%\SplitTrack\logs`.
 
 1. Copy `out\installer\SplitTrack-Setup-<version>.exe` over, run it, and start SplitTrack from the
    last page of the setup or the Start menu.
-2. Settings: add your games to the Game track (Add… lists what is running), add an App track for
+2. Settings: the Game track detects the full-screen game (`auto`); add games that run in a window
+   (Add… lists what is running), add an App track for
    `Discord.exe`, pick your headset under Mic if it is not the default, Save and apply.
 3. In a Discord call, play a match. The meters at the top move for Game, Discord, Mic and System
    (each one only for its own sound). Press Alt+F10 after a good moment, and Alt+F9 twice to

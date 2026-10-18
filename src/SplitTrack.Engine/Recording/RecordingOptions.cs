@@ -19,11 +19,17 @@ public enum AudioTrackKind
 
 /// <param name="Targets">
 /// Game / App: exe names or PIDs; the first one running is captured, and followed across restarts.
+/// Game only: <see cref="FullScreen"/> stands for whatever program is full screen in front.
 /// Microphone: device name filters; the first one present wins, none means the default device.
 /// </param>
 public sealed record AudioTrackOptions(string Title, AudioTrackKind Kind, IReadOnlyList<string>? Targets = null)
 {
+    /// <summary>The game target that detects the full-screen program instead of naming one.</summary>
+    public const string FullScreen = "auto";
+
     public IReadOnlyList<string> Targets { get; init; } = Targets ?? [];
+
+    public static bool IsFullScreen(string target) => string.Equals(target, FullScreen, StringComparison.OrdinalIgnoreCase);
 }
 
 /// <param name="Monitor">Monitor index from <c>CaptureTargets.ListMonitors</c>; used when <paramref name="Window"/> is null.</param>

@@ -47,13 +47,14 @@ internal static class Program
               --cursor, --no-cursor     Show or leave out the mouse pointer (default shown)
               --adapter <n>             GPU to use (default 0)
             Audio tracks: any of these replaces the configured tracks, in this order in the file
-              --game <exe[,exe...]>     "Game": the first of these running; may start later and restart
+              --game <exe[,exe...]>     "Game": the first of these running; may start later and restart.
+                                        auto = whatever program is full screen in front
               --app <Title>=<exe[,...]> Another per-app track (repeatable), e.g. --app Discord=Discord.exe
               --mic [name[,name...]]    "Mic": default microphone, or the first present containing a name
               --system                  "System": everything except the game
               --no-audio                No audio tracks
               --audio-bitrate <kbps>    AAC bitrate per track (default 160)
-              (default tracks: Mic, System)
+              (default tracks: Game = auto, Mic, System)
             Output
               --out <dir>               Library folder (default: Videos\SplitTrack)
               --seconds <n>             Stop after n seconds (otherwise Enter or Ctrl+C); not saved

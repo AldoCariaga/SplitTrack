@@ -68,3 +68,8 @@ WINDOW_EX_STYLE
 GetClientRect
 DwmGetWindowAttribute
 DWMWINDOWATTRIBUTE
+
+// Full-screen game detection
+GetForegroundWindow
+ClientToScreen
+MonitorFromWindow

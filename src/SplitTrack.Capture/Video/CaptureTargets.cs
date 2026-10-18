@@ -121,6 +121,53 @@ public static unsafe class CaptureTargets
             return null;
         }
 
+        if (ReadTitle(hwnd) is not { } title || !PInvoke.GetClientRect(hwnd, out RECT client))
+        {
+            return null;
+        }
+
+        uint pid;
+        PInvoke.GetWindowThreadProcessId(hwnd, &pid);
+        string exe = tree.Get((int)pid)?.ExeName ?? "?";
+        return new WindowInfo((nint)hwnd.Value, (int)pid, exe, title, client.right - client.left, client.bottom - client.top);
+    }
+
+    /// <summary>
+    /// The foreground window when its client area covers its whole monitor, as exclusive and borderless
+    /// full-screen games do; a maximized window keeps its title bar, so it never counts. Null otherwise.
+    /// </summary>
+    public static WindowInfo? FindFullScreenWindow(ProcessTree tree)
+    {
+        HWND hwnd = PInvoke.GetForegroundWindow();
+        if (hwnd == HWND.Null || PInvoke.IsIconic(hwnd) || !PInvoke.GetClientRect(hwnd, out RECT client))
+        {
+            return null;
+        }
+
+        var origin = new System.Drawing.Point(0, 0);
+        HMONITOR monitor = PInvoke.MonitorFromWindow(hwnd, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONULL);
+        var info = new MONITORINFO { cbSize = (uint)sizeof(MONITORINFO) };
+        if (!PInvoke.ClientToScreen(hwnd, ref origin) || monitor == HMONITOR.Null || !PInvoke.GetMonitorInfo(monitor, ref info))
+        {
+            return null;
+        }
+
+        RECT screen = info.rcMonitor;
+        if (origin.X > screen.left || origin.Y > screen.top ||
+            origin.X + client.right < screen.right || origin.Y + client.bottom < screen.bottom)
+        {
+            return null;
+        }
+
+        uint pid;
+        PInvoke.GetWindowThreadProcessId(hwnd, &pid);
+        string exe = tree.Get((int)pid)?.ExeName ?? "?";
+        return new WindowInfo((nint)hwnd.Value, (int)pid, exe, ReadTitle(hwnd) ?? string.Empty, client.right, client.bottom);
+    }
+
+    /// <summary>Null when the window has no title.</summary>
+    private static string? ReadTitle(HWND hwnd)
+    {
         int length = PInvoke.GetWindowTextLength(hwnd);
         if (length == 0)
         {
@@ -129,14 +176,6 @@ public static unsafe class CaptureTargets
 
         char* title = stackalloc char[length + 1];
         int copied = PInvoke.GetWindowText(hwnd, title, length + 1);
-        if (copied == 0 || !PInvoke.GetClientRect(hwnd, out RECT client))
-        {
-            return null;
-        }
-
-        uint pid;
-        PInvoke.GetWindowThreadProcessId(hwnd, &pid);
-        string exe = tree.Get((int)pid)?.ExeName ?? "?";
-        return new WindowInfo((nint)hwnd.Value, (int)pid, exe, new string(title, 0, copied), client.right - client.left, client.bottom - client.top);
+        return copied == 0 ? null : new string(title, 0, copied);
     }
 }

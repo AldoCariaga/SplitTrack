@@ -91,7 +91,7 @@ public sealed class TrackEditor : ObservableObject
     public string TargetsHint => Kind switch
     {
         AudioTrackKind.Microphone => "Name parts, first one present wins; empty = default microphone",
-        AudioTrackKind.Game => "Exe names, first one running wins, e.g. VALORANT-Win64-Shipping.exe",
+        AudioTrackKind.Game => "Exe names, first one running wins, e.g. cs2.exe; auto = whatever is full screen in front",
         AudioTrackKind.App => "Exe names, e.g. Discord.exe",
         _ => "Everything you hear except the game",
     };
