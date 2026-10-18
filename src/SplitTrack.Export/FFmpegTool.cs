@@ -26,7 +26,7 @@ public sealed class FFmpegTool(string exePath)
         string path = Path.Combine(AppContext.BaseDirectory, "ffmpeg", "ffmpeg.exe");
         return File.Exists(path)
             ? new FFmpegTool(path)
-            : throw new FileNotFoundException($"ffmpeg.exe is missing: {path} not found. Copy the 'ffmpeg' folder next to the exe.", path);
+            : throw new FileNotFoundException($"ffmpeg.exe is missing: {path} not found. Reinstall SplitTrack, or copy the 'ffmpeg' folder next to the exe.", path);
     }
 
     /// <summary>Runs ffmpeg with <paramref name="arguments"/>; cancelling kills it.</summary>

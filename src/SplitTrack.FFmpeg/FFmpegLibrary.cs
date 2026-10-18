@@ -38,8 +38,8 @@ public static unsafe class FFmpegLibrary
             if (!File.Exists(avcodec))
             {
                 throw new FileNotFoundException(
-                    $"FFmpeg is missing: {avcodec} not found. Copy the 'ffmpeg' folder next to the exe " +
-                    @"(or run tools\get-ffmpeg.ps1 when building).", avcodec);
+                    $"FFmpeg is missing: {avcodec} not found. Reinstall SplitTrack, or copy the 'ffmpeg' folder next to the exe " +
+                    @"(run tools\get-ffmpeg.ps1 when building).", avcodec);
             }
 
             ffmpeg.RootPath = directory;
