@@ -1,7 +1,8 @@
 <UserControl x:Class="SplitTrack.App.Views.SettingsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="clr-namespace:SplitTrack.App.ViewModels">
+             xmlns:vm="clr-namespace:SplitTrack.App.ViewModels"
+             xmlns:views="clr-namespace:SplitTrack.App.Views">
     <UserControl.Resources>
         <Style x:Key="Row" TargetType="Grid">
             <Setter Property="Margin" Value="0,0,0,10" />
@@ -38,7 +39,7 @@
             </StackPanel>
         </Border>
 
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" views:SmoothScroll.IsEnabled="True">
             <StackPanel Margin="4,0,20,24" MaxWidth="900" HorizontalAlignment="Left">
 
                 <TextBlock Text="Library" Style="{StaticResource SectionHeader}" Margin="0,4,0,8" />

@@ -112,7 +112,7 @@
                         </StackPanel>
                     </DockPanel>
                     <ListBox x:Name="EntryList" Grid.Row="1" ItemsSource="{Binding Entries}" BorderThickness="0" Background="Transparent"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled" MouseDoubleClick="OnEntryDoubleClick" KeyDown="OnEntryKeyDown">
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled" views:SmoothScroll.IsEnabled="True" MouseDoubleClick="OnEntryDoubleClick" KeyDown="OnEntryKeyDown">
                         <ListBox.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <WrapPanel />
