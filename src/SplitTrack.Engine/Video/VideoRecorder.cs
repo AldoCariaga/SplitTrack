@@ -120,7 +120,7 @@ internal sealed class VideoRecorder : IDisposable
         if (options.Window is { } spec)
         {
             WindowInfo window = CaptureTargets.FindWindow(spec)
-                ?? throw new RecordingSetupException($"No capturable window matches '{spec}'. Run 'list' to see them.");
+                ?? throw new RecordingSetupException($"No open window matches '{spec}' (minimised windows cannot be captured).");
             return WgcCaptureSource.ForWindow(device, window, options.Cursor);
         }
 

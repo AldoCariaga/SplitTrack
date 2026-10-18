@@ -281,6 +281,9 @@ public sealed class TrackSettings
 
 public sealed class ReplaySettings
 {
+    /// <summary>The app keeps the replay buffer running while it is open (RecordCli's replay command ignores this).</summary>
+    public bool Enabled { get; set; } = true;
+
     /// <summary>Seconds kept in memory, i.e. the length of a saved clip.</summary>
     public double BufferSeconds { get; set; } = 60;
 
@@ -296,18 +299,38 @@ public sealed class HotkeySettings
     /// <summary>Saves a clip from the replay buffer, e.g. Alt+F10 or Ctrl+Shift+F8.</summary>
     public string SaveClip { get; set; } = "Alt+F10";
 
+    /// <summary>Starts or stops recording to a file in the app; empty for none.</summary>
+    public string? ToggleRecording { get; set; } = "Alt+F9";
+
     [JsonIgnore]
     public HotkeyGesture SaveClipGesture => HotkeyGesture.Parse(SaveClip);
 
+    /// <summary>Null when none is set.</summary>
+    [JsonIgnore]
+    public HotkeyGesture? ToggleRecordingGesture => string.IsNullOrWhiteSpace(ToggleRecording) ? null : HotkeyGesture.Parse(ToggleRecording);
+
     internal void Validate(List<string> errors)
     {
+        HotkeyGesture? saveClip = null;
         try
         {
-            HotkeyGesture.Parse(SaveClip ?? string.Empty);
+            saveClip = HotkeyGesture.Parse(SaveClip ?? string.Empty);
         }
         catch (FormatException ex)
         {
             errors.Add($"hotkeys.saveClip: {ex.Message}");
+        }
+
+        try
+        {
+            if (ToggleRecordingGesture is { } toggle && toggle == saveClip)
+            {
+                errors.Add("hotkeys.toggleRecording: is the same as hotkeys.saveClip");
+            }
+        }
+        catch (FormatException ex)
+        {
+            errors.Add($"hotkeys.toggleRecording: {ex.Message}");
         }
     }
 }

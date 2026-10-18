@@ -14,6 +14,8 @@ CoTaskMemFree
 // WASAPI
 IAudioClient
 IAudioCaptureClient
+IAudioRenderClient
+IAudioClock
 AUDCLNT_SHAREMODE
 AUDCLNT_STREAMFLAGS_*
 _AUDCLNT_BUFFERFLAGS
@@ -23,6 +25,7 @@ WAVEFORMATEXTENSIBLE
 
 // Devices and sessions
 MMDeviceEnumerator
+ERole
 IMMDeviceEnumerator
 IMMDevice
 IMMDeviceCollection

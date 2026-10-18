@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>SplitTrack</AssemblyName>
+    <RootNamespace>SplitTrack.App</RootNamespace>
+    <UseWPF>true</UseWPF>
+    <!-- Only for the tray icon (NotifyIcon) and the recycle bin. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <FFmpegExe>true</FFmpegExe>
+    <!-- WPF0001: the Fluent theme (ThemeMode) is marked experimental. -->
+    <NoWarn>$(NoWarn);WPF0001</NoWarn>
+  </PropertyGroup>
+
+  <!-- `dotnet publish` gives one exe that runs on a PC without .NET installed; ffmpeg.exe and its DLLs sit next to it. -->
+  <PropertyGroup>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <Import Project="..\..\tools\FFmpeg.targets" />
+
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+    <Using Include="System.IO" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SplitTrack.Engine\SplitTrack.Engine.csproj" />
+    <ProjectReference Include="..\SplitTrack.Export\SplitTrack.Export.csproj" />
+    <ProjectReference Include="..\SplitTrack.Preview\SplitTrack.Preview.csproj" />
+  </ItemGroup>
+</Project>

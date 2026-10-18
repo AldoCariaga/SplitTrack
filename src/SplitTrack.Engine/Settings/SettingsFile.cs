@@ -77,6 +77,10 @@ public static class SettingsFile
 
     public static string Serialize(RecorderSettings settings) => JsonSerializer.Serialize(settings, JsonOptions);
 
+    /// <summary>A deep copy, e.g. for a settings page to edit.</summary>
+    public static RecorderSettings Clone(RecorderSettings settings) =>
+        JsonSerializer.Deserialize<RecorderSettings>(Serialize(settings), JsonOptions)!;
+
     /// <summary>The serializer's message without .NET type names, e.g. "line 4, video.fps: not a valid value here".</summary>
     private static string Describe(JsonException ex)
     {

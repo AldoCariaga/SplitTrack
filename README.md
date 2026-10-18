@@ -4,13 +4,13 @@ A Windows game recorder that keeps **one audio track per source** (game, Discord
 you can choose later which ones end up in the exported clip. Per-app audio comes from WASAPI
 process loopback, so no virtual audio cables are needed.
 
-Status: **Milestone 6, export** (`tools/SplitTrack.ExportCli`): turns a recording or clip into a
-plain MP4 with the chosen tracks mixed at chosen volumes, optionally cut and kept under a size
-limit. Recording is `tools/SplitTrack.RecordCli`: one MKV with video and one named AAC track per
-audio source, either recorded whole or kept as a replay buffer that a hotkey saves clips from;
-every file gets a JSON sidecar and a thumbnail. What to record comes from `settings.json`, which
-command-line options override per run. The milestone 1 and 2 proofs of
-concept (`tools/SplitTrack.AudioPoc`, `tools/SplitTrack.VideoPoc`) are still there.
+Status: **Milestone 7, the app** (`src/SplitTrack.App`, `SplitTrack.exe`): a tray app that keeps a
+replay buffer running, saves clips and starts/stops recordings with hotkeys, shows the library as
+a thumbnail grid, plays a recording with every track mixed live at its own volume, and exports
+the part you choose to MP4 (optionally under a size limit, e.g. Discord's 10 MB). Its settings
+page edits the same `settings.json` the command-line tools use. The command-line tools are still
+there: `tools/SplitTrack.RecordCli` (record / replay), `tools/SplitTrack.ExportCli` (export) and
+the milestone 1 and 2 proofs of concept (`tools/SplitTrack.AudioPoc`, `tools/SplitTrack.VideoPoc`).
 
 ## Requirements
 
@@ -29,6 +29,9 @@ dotnet build -c Release
 ```
 
 ```
+dotnet run --project src\SplitTrack.App -c Release
+dotnet publish src\SplitTrack.App -c Release -o out\app
+
 dotnet run --project tools\SplitTrack.AudioPoc -c Release -- list
 dotnet run --project tools\SplitTrack.AudioPoc -c Release -- record --process msedge.exe --mic --seconds 15 --out C:\Temp\poc
 dotnet publish tools\SplitTrack.AudioPoc -c Release -o out\audio-poc
@@ -52,7 +55,37 @@ dotnet publish tools\SplitTrack.ExportCli -c Release -o out\export-cli
 another PC. For video, copy `out\video-poc\SplitTrack.VideoPoc.exe` **and** the `ffmpeg` folder
 next to it (about 185 MB together); the same goes for `out\record-cli\SplitTrack.RecordCli.exe`.
 `out\export-cli\SplitTrack.ExportCli.exe` needs its `ffmpeg` folder too, which there also holds
-`ffmpeg.exe` and the DLLs it loads (about 225 MB together).
+`ffmpeg.exe` and the DLLs it loads (about 225 MB together). The app is the same:
+`out\app\SplitTrack.exe` (about 85 MB) plus its `ffmpeg` folder, about 260 MB together.
+
+## The app
+
+Start `SplitTrack.exe`. It sits in the notification area (the tray icon is grey when idle, green
+while the replay buffer runs, red while recording, orange when capture failed); closing the
+window keeps it running there, and Exit is in the tray icon's menu.
+
+- **Top of the window**: what is being captured, one level meter per audio track with what it is
+  recording right now (exe or device), and the buttons Save clip, Start/Stop recording and Replay
+  buffer on/off. The same actions are in the tray menu and on the hotkeys (default Alt+F10 saves
+  a clip, Alt+F9 starts and stops a recording). A balloon reports each saved clip or recording,
+  and problems such as a hotkey another program owns.
+- **Recording** starts on the next keyframe, at most a second after the press, and runs while the
+  replay buffer keeps going; with the replay buffer off, the capture starts for the recording only.
+- **Library**: clips and recordings, newest first, with thumbnails. Double-click (or Enter) opens
+  one; right-click to show it in its folder or delete it (to the Recycle Bin).
+- **Player**: plays the file with every audio track mixed live; untick a track or move its
+  volume (0–400 %, double-click for 100 %) and you hear the change at once. What you hear is what
+  gets exported. Space plays and pauses, arrows skip 5 s (Shift: 1 s), I and O set the part to
+  export. Export writes an MP4 next to the recording; Copy file puts it on the clipboard to paste
+  into Discord.
+- **Settings**: everything in `settings.json` (capture monitor or window, quality, encoder, the
+  audio tracks with pickers for running programs and microphones, clip length, hotkeys) and Start
+  with Windows. Save and apply restarts the capture with the new settings (after a running
+  recording ends).
+
+Options: `--settings <file>` uses another settings file, `--minimized` starts in the tray (what
+Start with Windows uses), and `--exit` closes a running SplitTrack cleanly (a running recording is
+finished first). Starting it a second time brings the open one to the front.
 
 ## RecordCli commands
 
@@ -108,8 +141,15 @@ out-of-range values are reported with their line and name):
       { "title": "System", "kind": "system" }
     ]
   },
-  "replay": { "bufferSeconds": 60, "alsoRecord": false },
-  "hotkeys": { "saveClip": "Alt+F10" }
+  "replay": {
+    "enabled": true,                     // the app keeps the replay buffer running (RecordCli ignores this)
+    "bufferSeconds": 60,
+    "alsoRecord": false                  // RecordCli replay only
+  },
+  "hotkeys": {
+    "saveClip": "Alt+F10",
+    "toggleRecording": "Alt+F9"          // the app only; null or "" for none
+  }
 }
 ```
 
@@ -232,6 +272,23 @@ Logs: `%LOCALAPPDATA%\SplitTrack\logs`.
 
 ## Testing on a gaming PC
 
+### The app (milestone 7)
+
+1. Copy the `out\app` folder (`SplitTrack.exe` and `ffmpeg`) over and double-click `SplitTrack.exe`.
+2. Settings: add your games to the Game track (Add… lists what is running), add an App track for
+   `Discord.exe`, pick your headset under Mic if it is not the default, Save and apply.
+3. In a Discord call, play a match. The meters at the top move for Game, Discord, Mic and System
+   (each one only for its own sound). Press Alt+F10 after a good moment, and Alt+F9 twice to
+   record a minute or so.
+4. Open the clip from the Library: picture and sound in sync (gunshots, voices); untick Discord
+   and System, and only the game and you remain.
+5. Export with Size limit 10 MB (Discord), Copy file, paste into Discord: it uploads and plays
+   inline, also on a phone.
+6. Unplug or switch the headset mid-match: no crash, the Mic meter follows. Quit and restart the
+   game while the app runs: the Game meter comes back.
+7. A 30–60 minute recording: the file plays to the end in sync; Task Manager shows SplitTrack's
+   memory flat over time.
+
 ### Recorder (milestone 3)
 
 1. Copy `SplitTrack.RecordCli.exe` and its `ffmpeg` folder over.
@@ -289,6 +346,8 @@ src/SplitTrack.Library   Library folder naming, JSON sidecars, thumbnails
 src/SplitTrack.Engine    Capture session: video loop, audio tracks, source watcher (process restarts, device changes),
                          packet routing to file and replay buffer, clip saving, global hotkey, settings.json
 src/SplitTrack.Export    Export to MP4: track mix, keyframe or exact cut, size limit; runs ffmpeg.exe
+src/SplitTrack.Preview   Preview player: decode to BGRA frames and per-track audio rings, live mix to a WASAPI output
+src/SplitTrack.App       The WPF tray app: recorder service and hotkeys, library, player and export, settings
 tools/SplitTrack.AudioPoc
 tools/SplitTrack.VideoPoc
 tools/SplitTrack.RecordCli

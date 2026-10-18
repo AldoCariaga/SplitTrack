@@ -15,7 +15,8 @@ namespace SplitTrack.Engine.Recording;
 /// <summary>
 /// One capture session: video plus one AAC track per audio source, all on the QPC clock from the
 /// same start instant to the same end instant. Packets go to the session MKV, the replay buffer,
-/// or both. Open → Start → (SaveClip...) → StopAt/StopSoon → Complete.
+/// recordings started mid-session, or any mix of them.
+/// Open → Start → (SaveClip, StartRecording/StopRecording...) → StopAt/StopSoon → Complete.
 /// </summary>
 public sealed class RecordingSession : IDisposable
 {
@@ -28,6 +29,11 @@ public sealed class RecordingSession : IDisposable
     private readonly RecordingOptions _options;
     private readonly List<AudioTrack> _tracks = [];
     private readonly List<SessionStream> _streams = [];
+    private readonly Lock _recordingGate = new();
+    private FileRecording? _recording;
+
+    // The current recording plus stopped ones still waiting for their last packets.
+    private FileRecording[] _recordings = [];
     private MkvWriter? _mkv;
     private ReplayBuffer? _replay;
     private ClipSaver? _saver;
@@ -43,10 +49,16 @@ public sealed class RecordingSession : IDisposable
     /// <summary>A clip was saved or failed to save; raised on the saver thread.</summary>
     public event Action<ClipResult>? ClipSaved;
 
+    /// <summary>A recording started with <see cref="StartRecording"/> was finished; raised on a background thread.</summary>
+    public event Action<RecordingResult>? RecordingSaved;
+
     /// <summary>The session MKV, or null without one.</summary>
     public string? OutputPath => _options.OutputPath;
 
     public bool HasReplayBuffer => _replay is not null;
+
+    /// <summary>A recording started with <see cref="StartRecording"/> is running.</summary>
+    public bool IsRecording => Volatile.Read(ref _recording) is not null;
 
     /// <summary>The first frame's instant; 0 until <see cref="Start"/>.</summary>
     public long StartQpc { get; private set; }
@@ -67,11 +79,6 @@ public sealed class RecordingSession : IDisposable
         if (options.Video is null && options.AudioTracks.Count == 0)
         {
             throw new RecordingSetupException("Nothing to record: no video and no audio tracks.");
-        }
-
-        if (options.OutputPath is null && options.Replay is null)
-        {
-            throw new RecordingSetupException("Nothing to save to: no output file and no replay buffer.");
         }
 
         if (options.AudioTracks.Count(t => t.Kind == AudioTrackKind.Game) > 1 || options.AudioTracks.Count(t => t.Kind == AudioTrackKind.System) > 1)
@@ -128,6 +135,51 @@ public sealed class RecordingSession : IDisposable
 
         Log.Info($"Clip requested at {QpcClock.TicksToMilliseconds(pressedQpc - StartQpc) / 1000:0.000} s");
         _saver!.Request(Math.Min(pressedQpc, EndQpc) - StartQpc, DateTime.Now);
+    }
+
+    /// <summary>
+    /// Starts recording to <paramref name="paths"/> on the next video keyframe (at most one GOP away),
+    /// while the session and its replay buffer keep running.
+    /// </summary>
+    public void StartRecording(EntryPaths paths)
+    {
+        if (StartQpc == 0 || _completed || QpcClock.Now >= EndQpc)
+        {
+            throw new InvalidOperationException("The session is not running.");
+        }
+
+        lock (_recordingGate)
+        {
+            if (_recording is not null)
+            {
+                throw new InvalidOperationException("A recording is already running.");
+            }
+
+            FileRecording? recording = null;
+            recording = new FileRecording(
+                paths,
+                _streams,
+                _videoStream,
+                QpcClock.Now - StartQpc,
+                (p, created, seconds, thumbnail) => Describe(EntryKind.Recording, p, created, seconds, thumbnail),
+                result => OnRecordingFinished(recording!, result));
+            Volatile.Write(ref _recording, recording);
+            Volatile.Write(ref _recordings, [.. _recordings, recording]);
+            Log.Info($"Recording requested: {paths.Video}");
+        }
+    }
+
+    /// <summary>Ends the running recording now; it is finished in the background and reported by <see cref="RecordingSaved"/>.</summary>
+    public void StopRecording()
+    {
+        FileRecording? recording;
+        lock (_recordingGate)
+        {
+            recording = _recording;
+            Volatile.Write(ref _recording, null);
+        }
+
+        recording?.Stop(Math.Min(QpcClock.Now, EndQpc) - StartQpc);
     }
 
     /// <summary>
@@ -189,6 +241,13 @@ public sealed class RecordingSession : IDisposable
 
         _mkv?.Close();
         _saver?.Dispose();
+        StopRecording();
+        foreach (FileRecording recording in Volatile.Read(ref _recordings))
+        {
+            recording.EndInput();
+            recording.Join();
+        }
+
         _completed = true;
         Log.Info($"Session stopped after {QpcClock.TicksToMilliseconds(EndQpc - StartQpc):0} ms");
 
@@ -213,7 +272,8 @@ public sealed class RecordingSession : IDisposable
 
         long elapsed = StartQpc == 0 ? 0 : Math.Min(QpcClock.Now, EndQpc) - StartQpc;
         return new SessionStatus(
-            Math.Max(0, elapsed), _video?.GetStatus(), audio, _mkv?.BytesWritten ?? 0, _mkv?.WriteError, _replay?.GetStats());
+            Math.Max(0, elapsed), _video?.GetStatus(), audio, _mkv?.BytesWritten ?? 0, _mkv?.WriteError, _replay?.GetStats(),
+            Volatile.Read(ref _recording)?.GetStatus(elapsed));
     }
 
     public void Dispose()
@@ -227,6 +287,11 @@ public sealed class RecordingSession : IDisposable
 
         _mkv?.Dispose();
         _saver?.Dispose();
+        foreach (FileRecording recording in Volatile.Read(ref _recordings))
+        {
+            recording.Dispose();
+        }
+
         _replay?.Dispose();
         foreach (SessionStream stream in _streams)
         {
@@ -277,15 +342,38 @@ public sealed class RecordingSession : IDisposable
         _watcher = new SourceWatcher(_tracks);
     }
 
-    /// <summary>Hands an encoder's packet to every output; the buffer gets its own reference when the file also takes one.</summary>
+    /// <summary>Hands an encoder's packet to every output, each with its own reference (shared data, no copy).</summary>
     private void Route(int stream, MediaPacket packet)
     {
+        foreach (FileRecording recording in Volatile.Read(ref _recordings))
+        {
+            recording.Offer(stream, packet.Clone());
+        }
+
         if (_replay is not null)
         {
             _replay.Add(stream, _mkv is null ? packet : packet.Clone());
         }
 
-        _mkv?.Write(stream, packet);
+        if (_mkv is not null)
+        {
+            _mkv.Write(stream, packet);
+        }
+        else if (_replay is null)
+        {
+            packet.Dispose();
+        }
+    }
+
+    // Runs on the recording's own close thread, so it is dropped from routing, not disposed, here.
+    private void OnRecordingFinished(FileRecording recording, RecordingResult result)
+    {
+        lock (_recordingGate)
+        {
+            Volatile.Write(ref _recordings, _recordings.Where(r => r != recording).ToArray());
+        }
+
+        RecordingSaved?.Invoke(result);
     }
 
     private void WriteRecordingSidecar(string videoPath)

@@ -23,10 +23,12 @@ public sealed record VideoStatus(string Description, PipelineStats Pipeline, Cap
 /// <param name="ElapsedTicks">Since the recording's first frame, in QPC ticks; 0 before it starts.</param>
 /// <param name="BytesWritten">The session MKV so far; 0 without one.</param>
 /// <param name="Buffer">The replay buffer, or null without one.</param>
+/// <param name="Recording">The recording started with <c>StartRecording</c>, or null while none runs.</param>
 public sealed record SessionStatus(
     long ElapsedTicks,
     VideoStatus? Video,
     IReadOnlyList<AudioTrackStatus> Audio,
     long BytesWritten,
     Exception? WriteError,
-    ReplayBufferStats? Buffer);
+    ReplayBufferStats? Buffer,
+    RecordingStatus? Recording = null);
