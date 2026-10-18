@@ -215,8 +215,9 @@ whole track list (in the order Game, apps, Mic, System); the other options chang
 
 ### Tracks
 
-Files go to the library folder, `Videos\SplitTrack` unless the settings or `--out` say otherwise.
-`record` writes `<ts>_rec.mkv`: the video as in VideoPoc, then one AAC track (48 kHz stereo) per
+Files go to the library folder, `Videos\SplitTrack` unless the settings or `--out` say otherwise,
+one subfolder per recording or clip, named like its files. `record` writes `<ts>_rec\<ts>_rec.mkv`:
+the video as in VideoPoc, then one AAC track (48 kHz stereo) per
 audio track:
 
 | Kind (option) | Track title | What it records |
@@ -243,7 +244,7 @@ also stops when a captured window closes.
 
 `replay` keeps the last `--buffer` seconds in memory, already encoded (about 150 MB for 60 s at
 20 Mbps), and writes nothing until you press the hotkey. The hotkey works while a game has focus;
-S in the console window does the same. Each press saves `<ts>_clip.mkv` with every track, ending
+S in the console window does the same. Each press saves `<ts>_clip\<ts>_clip.mkv` with every track, ending
 at the moment of the press and starting on a keyframe (at most 1 s before the buffer length, so
 a 60 s buffer gives clips of 60–61 s). Presses in quick succession give overlapping clips.
 `--record` also records the whole session, as `record` does. If another program already uses the
@@ -254,7 +255,8 @@ Next to each video there is `<name>.json`, a sidecar with what the file holds (l
 exe that was captured, video settings, the audio tracks with their titles, stream numbers, kinds,
 configured targets and the exe or device last captured), and `<name>.jpg`, a 320 px
 thumbnail of the middle of the video. The sidecar is written last, so a video without one is an
-interrupted save.
+interrupted save. Exports go in the same subfolder. Entries that earlier versions saved directly in
+the library folder are still listed.
 
 ## ExportCli commands
 

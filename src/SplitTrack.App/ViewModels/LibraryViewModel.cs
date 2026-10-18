@@ -208,7 +208,11 @@ public sealed class LibraryViewModel : ObservableObject, IDisposable
         try
         {
             Directory.CreateDirectory(root);
-            _watcher = new FileSystemWatcher(root) { IncludeSubdirectories = false, NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite };
+            _watcher = new FileSystemWatcher(root)
+            {
+                IncludeSubdirectories = true,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite,
+            };
             _watcher.Created += OnFolderChanged;
             _watcher.Deleted += OnFolderChanged;
             _watcher.Renamed += OnFolderChanged;
@@ -274,7 +278,7 @@ public sealed class LibraryViewModel : ObservableObject, IDisposable
             return entries;
         }
 
-        foreach (string path in Directory.EnumerateFiles(root, "*.mkv", SearchOption.TopDirectoryOnly))
+        foreach (string path in LibraryFolder.EnumerateVideos(root))
         {
             if (skip is not null && path.Equals(skip, StringComparison.OrdinalIgnoreCase))
             {
@@ -416,6 +420,14 @@ public sealed class LibraryViewModel : ObservableObject, IDisposable
                 }
             }
 
+            // The entry's own folder goes too once nothing else (e.g. an export) is left in it.
+            string folder = Path.GetDirectoryName(entry.VideoPath)!;
+            if (!Path.GetFullPath(folder).TrimEnd('\\').Equals(Path.GetFullPath(Root).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)
+                && !Directory.EnumerateFileSystemEntries(folder).Any())
+            {
+                Directory.Delete(folder);
+            }
+
             Log.Info($"Deleted {entry.VideoPath}");
         }
         catch (Exception ex)
@@ -429,7 +441,9 @@ public sealed class LibraryViewModel : ObservableObject, IDisposable
 
     private void OnFolderChanged(object sender, FileSystemEventArgs e)
     {
-        if (e.Name is { } name && (name.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase)))
+        // An entry folder (no extension) deleted or renamed in Explorer reports only the folder.
+        string extension = Path.GetExtension(e.Name ?? ".");
+        if (extension.Length == 0 || extension.Equals(".json", StringComparison.OrdinalIgnoreCase) || extension.Equals(".mkv", StringComparison.OrdinalIgnoreCase))
         {
             RefreshSoon();
         }

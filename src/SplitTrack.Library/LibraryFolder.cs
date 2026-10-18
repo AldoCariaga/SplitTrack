@@ -12,7 +12,10 @@ public sealed record EntryPaths(string Video, string Sidecar, string Thumbnail)
         new(videoPath, Path.ChangeExtension(videoPath, ".json"), Path.ChangeExtension(videoPath, ".jpg"));
 }
 
-/// <summary>The folder recordings and clips are saved to, one MKV + JSON sidecar + JPEG each.</summary>
+/// <summary>
+/// The folder recordings and clips are saved to, one subfolder each holding its MKV, JSON sidecar, JPEG and exports.
+/// Older versions saved entries flat in the root; those are still read.
+/// </summary>
 public sealed class LibraryFolder(string root)
 {
     public static string DefaultRoot =>
@@ -20,21 +23,29 @@ public sealed class LibraryFolder(string root)
 
     public string Root { get; } = Path.GetFullPath(root);
 
-    /// <summary>Paths for a new entry named after <paramref name="time"/>, e.g. 20261018_140322_clip.mkv; never an existing name.</summary>
+    /// <summary>
+    /// Paths for a new entry named after <paramref name="time"/>, e.g. 20261018_140322_clip\20261018_140322_clip.mkv;
+    /// never an existing name. Creates the entry's folder.
+    /// </summary>
     public EntryPaths NewEntry(DateTime time, string suffix)
     {
-        Directory.CreateDirectory(Root);
         string baseName = $"{time:yyyyMMdd_HHmmss}_{suffix}";
         for (int n = 1; ; n++)
         {
             string name = n == 1 ? baseName : $"{baseName}_{n}";
-            EntryPaths paths = EntryPaths.ForVideo(Path.Combine(Root, name + ".mkv"));
-            if (!File.Exists(paths.Video) && !File.Exists(paths.PartialVideo) && !File.Exists(paths.Sidecar))
+            string folder = Path.Combine(Root, name);
+            EntryPaths flat = EntryPaths.ForVideo(Path.Combine(Root, name + ".mkv"));
+            if (!Directory.Exists(folder) && !File.Exists(flat.Video) && !File.Exists(flat.Sidecar))
             {
-                return paths;
+                Directory.CreateDirectory(folder);
+                return EntryPaths.ForVideo(Path.Combine(folder, name + ".mkv"));
             }
         }
     }
+
+    /// <summary>The entries' videos: one level of subfolders, plus old entries saved flat in the root.</summary>
+    public static IEnumerable<string> EnumerateVideos(string root) =>
+        Directory.EnumerateFiles(root, "*.mkv", new EnumerationOptions { RecurseSubdirectories = true, MaxRecursionDepth = 1 });
 
     /// <summary>Writes through a temporary file, so a reader never sees half a sidecar.</summary>
     public static void WriteSidecar(string path, Sidecar sidecar)
