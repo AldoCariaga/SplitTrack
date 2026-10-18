@@ -25,8 +25,9 @@ New-Item -ItemType Directory -Force $temp | Out-Null
 try {
     $zip = Join-Path $temp "$name.zip"
     Write-Host "Downloading $name.zip ..."
-    Invoke-WebRequest "$baseUrl/$name.zip" -OutFile $zip
-    $sums = (Invoke-WebRequest "$baseUrl/checksums.sha256").Content
+    # -UseBasicParsing: without it Windows PowerShell 5.1 needs the IE engine and fails where that is gone.
+    Invoke-WebRequest "$baseUrl/$name.zip" -OutFile $zip -UseBasicParsing
+    $sums = (Invoke-WebRequest "$baseUrl/checksums.sha256" -UseBasicParsing).Content
     if ($sums -is [byte[]]) { $sums = [Text.Encoding]::UTF8.GetString($sums) }
 
     $expected = ($sums -split "`n" | Where-Object { $_ -match "\s\*?$([regex]::Escape("$name.zip"))\s*$" } | Select-Object -First 1) -replace '\s.*$', ''
