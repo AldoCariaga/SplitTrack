@@ -270,12 +270,12 @@ SplitTrack.ExportCli encoders
 ```
 
 `<file>` is a recording's `.mkv` or its `.json` sidecar. `info` lists the audio tracks with their
-number, title, kind and what they captured. `export` writes `<name>.mp4` next to the source (or
+number, title, kind and what they captured. `export` writes `<name>_export.mp4` next to the source (or
 `--out`): H.264 video and **one** AAC track (48 kHz stereo) that mixes the tracks named in
 `--tracks` (all of them by default), each at its volume, e.g. `--tracks Game,Discord=80,Mic=150`.
 The mix is a plain sum, so a track at 100 % sounds as loud as in the recording; a limiter stops
 the sum from clipping. The moov box is at the front, so the file starts playing while it downloads
-(Discord, browsers, phones). An audio-only recording becomes `<name>.m4a`.
+(Discord, browsers, phones). An audio-only recording becomes `<name>_export.m4a`.
 
 The video is **copied** as recorded unless something needs a re-encode, so most exports take a
 second or two and lose nothing:

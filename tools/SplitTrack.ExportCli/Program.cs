@@ -16,7 +16,7 @@ internal static class Program
 
           SplitTrack.ExportCli export <file> [options]
               Writes an MP4 (H.264 + one AAC track, playable on phones and in Discord) next to the
-              source, e.g. 20261018_140322_clip.mp4.
+              source, e.g. 20261018_140322_clip_export.mp4.
 
           SplitTrack.ExportCli encoders
               Which H.264 encoders work for re-encoding on this PC.

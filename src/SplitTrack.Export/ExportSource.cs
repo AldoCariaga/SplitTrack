@@ -73,11 +73,11 @@ public sealed class ExportSource
                 : null);
     }
 
-    /// <summary>Next to the source with its name, e.g. 20261018_140322_clip.mp4 (.m4a without video); never an existing file.</summary>
+    /// <summary>Next to the source with its name, e.g. 20261018_140322_clip_export.mp4 (.m4a without video); never an existing file.</summary>
     public string DefaultOutputPath()
     {
         string extension = Media.Video is null ? ".m4a" : ".mp4";
-        string stem = Path.Combine(Path.GetDirectoryName(VideoPath)!, Path.GetFileNameWithoutExtension(VideoPath));
+        string stem = Path.Combine(Path.GetDirectoryName(VideoPath)!, Path.GetFileNameWithoutExtension(VideoPath) + "_export");
         for (int n = 1; ; n++)
         {
             string path = (n == 1 ? stem : $"{stem}_{n}") + extension;
