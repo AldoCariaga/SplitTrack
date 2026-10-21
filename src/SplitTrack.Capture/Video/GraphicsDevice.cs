@@ -86,6 +86,8 @@ public sealed class GraphicsDevice : IDisposable
                 multithread.SetMultithreadProtected(true);
             }
 
+            RaiseGpuPriority(device);
+
             IDirect3DDevice winRtDevice = Direct3DInterop.CreateWinRtDevice(device);
             Log.Info($"D3D11 device on adapter {adapterIndex} '{info.Name}' ({info.VendorName}), feature level {device.FeatureLevel}");
             return new GraphicsDevice(device, info, winRtDevice);
@@ -97,6 +99,36 @@ public sealed class GraphicsDevice : IDisposable
         (WinRtDevice as IDisposable)?.Dispose();
         Device.Dispose();
     }
+
+    /// <summary>
+    /// A GPU-bound game otherwise starves our copy, convert and encode work: the encode loop then
+    /// stalls for hundreds of milliseconds and whole runs of frames are skipped. Best effort; both
+    /// calls may be refused without the base-priority privilege (elevation).
+    /// </summary>
+    private static void RaiseGpuPriority(ID3D11Device device)
+    {
+        // -1 is the current-process pseudo handle.
+        int status = D3DKMTSetProcessSchedulingPriorityClass(-1, SchedulingPriorityClassHigh);
+
+        using IDXGIDevice dxgi = device.QueryInterface<IDXGIDevice>();
+        SharpGen.Runtime.Result thread = dxgi.SetGPUThreadPriority(7);
+
+        if (status == 0 && thread.Success)
+        {
+            Log.Info("GPU scheduling priority raised (process class high, thread +7)");
+        }
+        else
+        {
+            Log.Warn($"GPU scheduling priority not fully raised (process class status 0x{status:X8}, thread {thread}); "
+                + "recordings may drop frames when the game saturates the GPU");
+        }
+    }
+
+    private const int SchedulingPriorityClassHigh = 4;
+
+    // A WDK (d3dkmthk.h) export, not in the Win32 metadata CsWin32 generates from.
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")]
+    private static extern int D3DKMTSetProcessSchedulingPriorityClass(nint process, int priority);
 
     private static GpuAdapterInfo Describe(int index, IDXGIAdapter1 adapter)
     {

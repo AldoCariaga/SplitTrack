@@ -88,6 +88,10 @@ public sealed class VideoPipeline
                 long current = QpcClock.TicksToFrames(QpcClock.Now - _startQpc, _fps);
                 long skipped = Math.Max(0, current - index);
                 index += skipped;
+                if (skipped > 0)
+                {
+                    Log.Debug($"Video: skipped {skipped} frame(s) at frame {index}; previous frame took {watch.Elapsed.TotalMilliseconds:F1} ms");
+                }
 
                 // The end may have been set while waiting.
                 if (_startQpc + QpcClock.FramesToTicks(index, _fps) >= Interlocked.Read(ref _endQpc))
