@@ -544,10 +544,18 @@ internal sealed unsafe class PreviewDecoder : IDisposable
 /// <summary>One audio stream: its decoder, a converter to 48 kHz float stereo, and its ring.</summary>
 internal sealed unsafe class AudioDecoder : IDisposable
 {
+    // Matroska timestamps are whole milliseconds, so a 1024-sample AAC frame (21.333 ms) is up to
+    // half a millisecond off its true place. Frames within this of where the previous one ended
+    // follow on from it; placing each by its timestamp clicks at every frame.
+    private const long MaxJitterFrames = PreviewDecoder.SampleRate / 50;
+
     private readonly AVRational _timeBase;
     private AVCodecContext* _codec;
     private SwrContext* _swr;
     private float[] _converted = new float[8192];
+
+    // Ring position right after the last frame written; null after a flush.
+    private long? _next;
 
     public AudioDecoder(AVStream* stream, int index, int number)
     {
@@ -588,6 +596,7 @@ internal sealed unsafe class AudioDecoder : IDisposable
         SwrContext* swr = _swr;
         ffmpeg.swr_free(&swr);
         _swr = null;
+        _next = null;
     }
 
     /// <param name="packet">Null drains the decoder at the end of the file.</param>
@@ -603,17 +612,30 @@ internal sealed unsafe class AudioDecoder : IDisposable
             try
             {
                 long pts = frame->best_effort_timestamp;
-                if (pts == ffmpeg.AV_NOPTS_VALUE)
+                long position;
+                if (pts != ffmpeg.AV_NOPTS_VALUE)
+                {
+                    position = ffmpeg.av_rescale_q(pts - ffmpeg.av_rescale_q(startTime, ffmpeg.av_get_time_base_q(), _timeBase), _timeBase,
+                        new AVRational { num = 1, den = PreviewDecoder.SampleRate });
+                    if (_next is { } next && Math.Abs(position - next) <= MaxJitterFrames)
+                    {
+                        position = next;
+                    }
+                }
+                else if (_next is { } next)
+                {
+                    position = next;
+                }
+                else
                 {
                     continue;
                 }
 
-                long position = ffmpeg.av_rescale_q(pts - ffmpeg.av_rescale_q(startTime, ffmpeg.av_get_time_base_q(), _timeBase), _timeBase,
-                    new AVRational { num = 1, den = PreviewDecoder.SampleRate });
                 int frames = Convert(frame);
                 if (frames > 0)
                 {
                     Ring.Write(position, _converted.AsSpan(0, frames * 2));
+                    _next = position + frames;
                 }
             }
             finally
