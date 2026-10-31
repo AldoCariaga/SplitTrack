@@ -78,6 +78,40 @@ public sealed class ProcessTree
         return current;
     }
 
+    /// <summary>
+    /// Whether <paramref name="pid"/> is <paramref name="root"/> or one of its descendants, by parent
+    /// links: what a process loopback capture of <paramref name="root"/>'s tree includes. A parent
+    /// created after its child is a reused PID and ends the chain.
+    /// </summary>
+    public bool IsInTree(int pid, int root)
+    {
+        var visited = new HashSet<int>();
+        int current = pid;
+        while (visited.Add(current))
+        {
+            if (current == root)
+            {
+                return true;
+            }
+
+            if (!_byPid.TryGetValue(current, out ProcessEntry? entry) || !_byPid.TryGetValue(entry.ParentPid, out ProcessEntry? parent))
+            {
+                return false;
+            }
+
+            long? parentCreated = GetCreationTime(parent.Pid);
+            long? childCreated = GetCreationTime(current);
+            if (parentCreated is { } p && childCreated is { } c && p > c)
+            {
+                return false;
+            }
+
+            current = parent.Pid;
+        }
+
+        return false;
+    }
+
     /// <summary>Creation time as a FILETIME value, or null when the process cannot be opened.</summary>
     public long? GetCreationTime(int pid)
     {

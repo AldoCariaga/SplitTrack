@@ -141,12 +141,13 @@ internal static class ExportCommand
         Console.WriteLine();
     }
 
-    // System records everything except the game, so an app track that captured something (e.g. Discord) is in it too.
+    // System used to record everything except the game, so an app track that captured something (e.g. Discord)
+    // is in it too. Since System leaves the apps out it names a source; those recordings need no note.
     private static string? OverlapNote(IReadOnlyList<TrackMix> tracks)
     {
         TrackMix? system = tracks.FirstOrDefault(t => t.Track.Kind == "system");
         string[] apps = tracks.Where(t => t.Track is { Kind: "app", Source: not null } && t.Volume > 0).Select(t => t.Track.Title).ToArray();
-        return system is not null && apps.Length > 0 && system.Volume > 0
+        return system is { Track.Source: null, Volume: > 0 } && apps.Length > 0
             ? $"{system.Track.Title} also contains {string.Join(" and ", apps)}, so it is heard twice; leave one out if that sounds wrong."
             : null;
     }

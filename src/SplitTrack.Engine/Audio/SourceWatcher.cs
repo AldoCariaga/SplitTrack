@@ -11,8 +11,8 @@ namespace SplitTrack.Engine.Audio;
 
 /// <summary>
 /// Keeps every track attached to the right source: follows game/app restarts, keeps the System
-/// track excluding the current game, follows the microphone across device changes, and pads
-/// tracks that have no source. Runs on its own thread once started.
+/// track excluding the current game and app tracks, follows the microphone across device
+/// changes, and pads tracks that have no source. Runs on its own thread once started.
 /// </summary>
 internal sealed class SourceWatcher : IDisposable
 {
@@ -21,6 +21,9 @@ internal sealed class SourceWatcher : IDisposable
 
     // Pause before retrying a source that failed to open or faulted.
     private static readonly long RetryTicks = QpcClock.MillisecondsToTicks(2_000);
+
+    // The System track's source in the sidecar once it left the apps out; earlier recordings have none.
+    private const string MixSourceName = "all but the game and app tracks";
 
     // Programs that go full screen without being games: the desktop and shell, and browsers playing video.
     private static readonly HashSet<string> NotGames = new(StringComparer.OrdinalIgnoreCase)
@@ -31,21 +34,29 @@ internal sealed class SourceWatcher : IDisposable
 
     private readonly IReadOnlyList<AudioTrack> _tracks;
     private readonly AudioTrack? _game;
+    private readonly IReadOnlyList<AudioTrack> _apps;
 
     // Exe names app tracks record, e.g. Discord full screen during a stream is not the game.
     private readonly HashSet<string> _appExes;
     private readonly AudioDeviceWatcher? _devices;
     private readonly Dictionary<AudioTrack, long> _retryAt = [];
+
+    // When to retry a program the System mix could not capture, by PID.
+    private readonly Dictionary<int, long> _mixRetryAt = [];
     private readonly ManualResetEventSlim _stop = new();
     private int _devicesVersion = -1;
+
+    // The System track's source while it is a mix, and the identity it was attached with.
+    private ProcessMixSource? _systemMix;
+    private SourceIdentity? _systemMixIdentity;
     private Thread? _thread;
 
     public SourceWatcher(IReadOnlyList<AudioTrack> tracks)
     {
         _tracks = tracks;
         _game = tracks.FirstOrDefault(t => t.Options.Kind == AudioTrackKind.Game);
-        _appExes = tracks
-            .Where(t => t.Options.Kind == AudioTrackKind.App)
+        _apps = tracks.Where(t => t.Options.Kind == AudioTrackKind.App).ToList();
+        _appExes = _apps
             .SelectMany(t => t.Options.Targets)
             .Where(t => !int.TryParse(t, out _))
             .Select(ProcessTree.NormalizeExeName)
@@ -65,7 +76,7 @@ internal sealed class SourceWatcher : IDisposable
         bool devicesChanged = devicesVersion != _devicesVersion;
         _devicesVersion = devicesVersion;
 
-        // Process tracks first: System depends on which game process is attached.
+        // Process tracks first: System depends on which game and app processes are attached.
         foreach (AudioTrack track in _tracks.OrderBy(t => t.Options.Kind == AudioTrackKind.System))
         {
             try
@@ -184,8 +195,20 @@ internal sealed class SourceWatcher : IDisposable
 
     private void ReconcileSystem(AudioTrack track, ProcessTree tree, long now)
     {
-        // Our own process plays nothing, so excluding it means "everything".
         SourceIdentity? game = _game?.Identity;
+        List<SourceIdentity> excluded = _apps.Select(t => t.Identity).OfType<SourceIdentity>().ToList();
+        if (excluded.Count > 0)
+        {
+            if (game is not null)
+            {
+                excluded.Add(game);
+            }
+
+            ReconcileSystemMix(track, tree, excluded, now);
+            return;
+        }
+
+        // Our own process plays nothing, so excluding it means "everything".
         int excludePid = game?.Pid ?? Environment.ProcessId;
         if (track.Identity is { } current && track.Fault is null && current.Pid == excludePid)
         {
@@ -198,8 +221,88 @@ internal sealed class SourceWatcher : IDisposable
         }
 
         string description = game is null ? "everything (no game running)" : $"everything except {game.Description}";
+        (_systemMix, _systemMixIdentity) = (null, null);
         Attach(track, ProcessLoopbackSource.Open(track.Title, excludePid, includeTree: false, AudioFormat.Float48Stereo),
             new SourceIdentity(description, excludePid), now);
+    }
+
+    /// <summary>
+    /// Windows leaves only one process tree out of a capture, so to leave out the apps as well as the
+    /// game, System captures every other program with an audio session on its own and mixes them.
+    /// </summary>
+    private void ReconcileSystemMix(AudioTrack track, ProcessTree tree, IReadOnlyList<SourceIdentity> excluded, long now)
+    {
+        if (_systemMix is null || track.Identity is null || !ReferenceEquals(track.Identity, _systemMixIdentity))
+        {
+            if (!CanRetry(track, now))
+            {
+                return;
+            }
+
+            var mix = new ProcessMixSource(track.Title);
+            var identity = new SourceIdentity(
+                "every other program, one by one (game and app tracks left out)", Name: MixSourceName);
+            Attach(track, mix, identity, now);
+            (_systemMix, _systemMixIdentity) = (mix, identity);
+            _mixRetryAt.Clear();
+        }
+
+        // Our own process plays the player's audio.
+        List<int> excludedRoots = excluded.Select(i => i.Pid).OfType<int>().Append(Environment.ProcessId).ToList();
+        HashSet<int> wanted = FindMixTargets(tree, excludedRoots);
+        foreach (int pid in _systemMix.FaultedPids)
+        {
+            _systemMix.Remove(pid);
+            _mixRetryAt[pid] = now + RetryTicks;
+        }
+
+        IReadOnlyList<int> current = _systemMix.Pids;
+        foreach (int pid in current.Where(p => !wanted.Contains(p)))
+        {
+            _systemMix.Remove(pid);
+        }
+
+        foreach (int pid in wanted.Where(p => !current.Contains(p)))
+        {
+            if (_mixRetryAt.TryGetValue(pid, out long at) && now < at)
+            {
+                continue;
+            }
+
+            try
+            {
+                _systemMix.Add(pid, tree.Get(pid)!.ExeName);
+                _mixRetryAt.Remove(pid);
+            }
+            catch (Exception ex)
+            {
+                _mixRetryAt[pid] = now + RetryTicks;
+                Log.Warn($"{track.Title}: could not capture pid {pid}, retrying", ex);
+            }
+        }
+
+        foreach (int pid in _mixRetryAt.Keys.Where(p => tree.Get(p) is null).ToList())
+        {
+            _mixRetryAt.Remove(pid);
+        }
+
+        _systemMix.Pump();
+    }
+
+    /// <summary>
+    /// The programs with an audio session outside the excluded trees, each the topmost of them in
+    /// its tree (a tree capture includes the rest). One whose tree holds an excluded process, e.g.
+    /// the launcher that started the game, is left out: capturing it would bring the game back.
+    /// </summary>
+    private static HashSet<int> FindMixTargets(ProcessTree tree, IReadOnlyList<int> excludedRoots)
+    {
+        List<int> candidates = AudioSessionScanner.ScanSessionPids()
+            .Where(pid => tree.Get(pid) is not null)
+            .Where(pid => !excludedRoots.Any(root => tree.IsInTree(pid, root) || tree.IsInTree(root, pid)))
+            .ToList();
+        return candidates
+            .Where(pid => !candidates.Any(other => other != pid && tree.IsInTree(pid, other)))
+            .ToHashSet();
     }
 
     private void ReconcileMicrophone(AudioTrack track, bool devicesChanged, long now)

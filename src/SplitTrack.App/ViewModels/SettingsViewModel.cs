@@ -41,7 +41,7 @@ public sealed class TrackEditor : ObservableObject
         new(AudioTrackKind.Game, "Game"),
         new(AudioTrackKind.App, "App, e.g. Discord"),
         new(AudioTrackKind.Microphone, "Microphone"),
-        new(AudioTrackKind.System, "System (all but the game)"),
+        new(AudioTrackKind.System, "System (all but the game and apps)"),
     ];
 
     public RelayCommand RemoveCommand { get; }
@@ -93,7 +93,7 @@ public sealed class TrackEditor : ObservableObject
         AudioTrackKind.Microphone => "Name parts, first one present wins; empty = default microphone",
         AudioTrackKind.Game => "Exe names, first one running wins, e.g. cs2.exe; auto = whatever is full screen in front",
         AudioTrackKind.App => "Exe names, e.g. Discord.exe",
-        _ => "Everything you hear except the game",
+        _ => "Everything you hear except the game and the app tracks",
     };
 
     public IReadOnlyList<string> Suggestions => Kind == AudioTrackKind.Microphone ? _owner.Microphones : _owner.Programs;

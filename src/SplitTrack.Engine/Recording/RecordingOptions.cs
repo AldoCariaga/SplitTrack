@@ -7,13 +7,13 @@ public enum AudioTrackKind
     /// <summary>The game's process tree, which the System track leaves out. At most one per session.</summary>
     Game,
 
-    /// <summary>Another process tree, e.g. Discord.</summary>
+    /// <summary>Another process tree, e.g. Discord, which the System track also leaves out.</summary>
     App,
 
     /// <summary>A capture device: the default one, or the first present that matches <see cref="AudioTrackOptions.Targets"/>.</summary>
     Microphone,
 
-    /// <summary>Everything except the game's process tree (everything while no game runs). At most one per session.</summary>
+    /// <summary>Everything except the game's and app tracks' process trees (everything while none runs). At most one per session.</summary>
     System,
 }
 

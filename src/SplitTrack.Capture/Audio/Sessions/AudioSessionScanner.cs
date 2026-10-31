@@ -15,7 +15,7 @@ public static class AudioSessionScanner
 
     public static IReadOnlyList<AudioProcessInfo> Scan(ProcessTree? tree = null)
     {
-        List<SessionInfo> sessions = ComApartment.RunInMta(ScanSessions);
+        List<SessionInfo> sessions = ComApartment.RunInMta(() => ScanSessions(includeSystemSounds: false));
         tree ??= ProcessTree.Snapshot();
 
         return sessions
@@ -32,7 +32,11 @@ public static class AudioSessionScanner
             .ToList();
     }
 
-    private static unsafe List<SessionInfo> ScanSessions()
+    /// <summary>Every process that owns a render session, Windows sounds included, without grouping.</summary>
+    public static IReadOnlyList<int> ScanSessionPids() =>
+        ComApartment.RunInMta(() => ScanSessions(includeSystemSounds: true)).Select(s => s.Pid).Distinct().ToList();
+
+    private static unsafe List<SessionInfo> ScanSessions(bool includeSystemSounds)
     {
         var result = new List<SessionInfo>();
         IMMDeviceEnumerator enumerator = AudioDeviceEnumerator.CreateEnumerator();
@@ -54,7 +58,7 @@ public static class AudioSessionScanner
                 for (int i = 0; i < sessionCount; i++)
                 {
                     sessionList.GetSession(i, out IAudioSessionControl control);
-                    if (TryRead((IAudioSessionControl2)control, deviceName) is { } info)
+                    if (TryRead((IAudioSessionControl2)control, deviceName, includeSystemSounds) is { } info)
                     {
                         result.Add(info);
                     }
@@ -69,11 +73,11 @@ public static class AudioSessionScanner
         return result;
     }
 
-    private static unsafe SessionInfo? TryRead(IAudioSessionControl2 control, string deviceName)
+    private static unsafe SessionInfo? TryRead(IAudioSessionControl2 control, string deviceName, bool includeSystemSounds)
     {
         try
         {
-            if (control.IsSystemSoundsSession().Value == SOk)
+            if (!includeSystemSounds && control.IsSystemSoundsSession().Value == SOk)
             {
                 return null;
             }

@@ -225,7 +225,7 @@ audio track:
 | `game` (`--game X,Y`) | `Game` | The first of the process trees X, Y that is running. It may start after the recording and restart during it. `auto` stands for the program that is full screen in front (see below). At most one |
 | `app` (`--app Title=X`, repeatable) | `Title` | Same rules, e.g. `--app Discord=Discord.exe` |
 | `microphone` (`--mic [name,...]`) | `Mic` | Default microphone, or the first present whose name contains one of the names; follows device changes and replugs |
-| `system` (`--system`) | `System` | Everything except the game (everything while no game runs). At most one |
+| `system` (`--system`) | `System` | Everything except the game and the app tracks (everything while none runs). While an app track records, every other program with an audio session is captured on its own and mixed, since Windows can leave only one program out of a capture; one that starts playing mid-recording joins within a quarter of a second. At most one |
 
 A process list is tried in order only while nothing is captured: a running game is kept even if
 one earlier in the list starts later.
@@ -362,7 +362,7 @@ Logs: `%LOCALAPPDATA%\SplitTrack\logs`.
 2. In a Discord call, with the game running:
    `SplitTrack.RecordCli.exe record --game <Game>.exe --app Discord=Discord.exe --mic --system --seconds 60 --out C:\Temp\poc`
 3. Open the MKV in VLC and switch between the tracks (Audio → Audio Track). Check:
-   - Game has only the game, Discord only the call, Mic only you, System everything except the game;
+   - Game has only the game, Discord only the call, Mic only you, System everything except the game and Discord;
    - gunshots and voices line up with the picture;
    - the summary shows every track at the same length, and `Corr` within a few hundred ppm.
 4. Start a recording *before* the game, quit the game and start it again mid-recording: the Game
