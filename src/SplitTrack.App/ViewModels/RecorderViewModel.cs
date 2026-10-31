@@ -184,6 +184,7 @@ public sealed class RecorderViewModel : ObservableObject
         (StateText, DetailText) = state switch
         {
             RecorderState.Starting => ("Starting…", null),
+            RecorderState.Waiting => ("Waiting for game", _service.Error),
             RecorderState.Error => ("Not capturing", _service.Error),
             RecorderState.Running when status?.Buffer is { } buffer =>
                 ("Replay buffer on", HeldText(buffer.HeldTicks) + $"  ·  {Formatting.Size(buffer.Bytes)} in memory"),

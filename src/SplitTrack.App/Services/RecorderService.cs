@@ -14,6 +14,9 @@ public enum RecorderState
 {
     Off,
     Starting,
+
+    /// <summary>A game chose the preset but its window is not open yet; retried quietly.</summary>
+    Waiting,
     Running,
     Error,
 }
@@ -31,6 +34,9 @@ public sealed class RecorderService : IDisposable
     // A session that could not start because of the setup (e.g. the window is not open yet) is retried.
     private static readonly TimeSpan RetryInterval = TimeSpan.FromSeconds(5);
 
+    // A game's process starts well before its window; waiting this long for the window is not an error yet.
+    private static readonly TimeSpan WaitLimit = TimeSpan.FromSeconds(90);
+
     private readonly Lock _gate = new();
     private readonly BlockingCollection<Action> _work = new();
     private readonly Thread _worker;
@@ -43,6 +49,8 @@ public sealed class RecorderService : IDisposable
     private string? _error;
     private bool _retry;
     private DateTime _nextRetry;
+    private DateTime? _waitingSince;
+    private bool _waitReported;
     private bool _wantRecording;
     private bool _restartPending;
     private string? _recordingPath;
@@ -98,7 +106,7 @@ public sealed class RecorderService : IDisposable
         }
     }
 
-    /// <summary>Why the session is not running, when <see cref="State"/> is Error.</summary>
+    /// <summary>Why the session is not running, when <see cref="State"/> is Error or Waiting.</summary>
     public string? Error
     {
         get
@@ -270,6 +278,8 @@ public sealed class RecorderService : IDisposable
                 _restartPending = _session is not null;
                 _error = null;
                 _retry = false;
+                _waitingSince = null;
+                _waitReported = false;
 
                 // Start over from the active preset; FollowGames below picks a running game's preset again.
                 _presetName = settings.Active.Name;
@@ -465,6 +475,8 @@ public sealed class RecorderService : IDisposable
                 _error = null;
                 _retry = false;
                 _restartPending = false;
+                _waitingSince = null;
+                _waitReported = false;
             }
 
             Log.Info($"App session started: preset '{preset.Name}', {session.VideoDescription ?? "audio only"}, replay {(session.HasReplayBuffer ? "on" : "off")}");
@@ -480,12 +492,36 @@ public sealed class RecorderService : IDisposable
             }
 
             bool repeated;
+            string? waitingFor = null;
             lock (_gate)
             {
                 // Retries after a setup failure (or a closed window) stay quiet; the first message said so.
                 repeated = _retry && setup;
                 _retry = setup;
                 _nextRetry = DateTime.UtcNow + RetryInterval;
+
+                // The game that chose this preset is starting but has no window yet: wait, quietly, up to a limit.
+                if (setup && _presetGame is { } game && preset.Video.Enabled && !string.IsNullOrWhiteSpace(preset.Video.Window))
+                {
+                    _waitingSince ??= DateTime.UtcNow;
+                    if (DateTime.UtcNow - _waitingSince < WaitLimit)
+                    {
+                        waitingFor = game;
+                    }
+                    else
+                    {
+                        // The limit passed: report it once, like a first failure.
+                        repeated = _waitReported;
+                        _waitReported = true;
+                    }
+                }
+            }
+
+            if (waitingFor is not null)
+            {
+                Log.Info($"Waiting for the {waitingFor} window: {ex.Message}");
+                SetState(RecorderState.Waiting, $"Waiting for the {waitingFor} window…");
+                return null;
             }
 
             SetState(RecorderState.Error, ex.Message);
@@ -630,6 +666,8 @@ public sealed class RecorderService : IDisposable
                 _restartPending = _session is not null;
                 _error = null;
                 _retry = false;
+                _waitingSince = null;
+                _waitReported = false;
             }
         }
 
