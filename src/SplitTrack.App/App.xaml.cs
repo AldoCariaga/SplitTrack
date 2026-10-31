@@ -25,6 +25,7 @@ public partial class App : Application
     private EventWaitHandle? _exitEvent;
     private RecorderService? _recorder;
     private TrayIcon? _tray;
+    private ToastWindow? _toast;
     private MainWindow? _window;
     private RecorderViewModel? _recorderViewModel;
     private LibraryViewModel? _library;
@@ -139,6 +140,7 @@ public partial class App : Application
     {
         Log.Info("Exiting");
         _tray?.Dispose();
+        _toast?.Close();
         _recorder?.Dispose();
         _library?.Dispose();
         Log.Close();
@@ -165,7 +167,7 @@ public partial class App : Application
                 if (!_toldAboutTray)
                 {
                     _toldAboutTray = true;
-                    _tray?.ShowBalloon("SplitTrack is still running", "The replay buffer keeps going. Exit from the tray icon's menu.", false);
+                    ShowToast("SplitTrack is still running", "The replay buffer keeps going. Exit from the tray icon's menu.", ToastKind.Info, ShowWindow);
                 }
             };
         }
@@ -238,7 +240,14 @@ public partial class App : Application
     private void ShowNotice(RecorderNotice notice)
     {
         Action? clicked = notice.Path is { } path ? () => Shell.ShowInFolder(path) : ShowWindow;
-        _tray?.ShowBalloon(notice.Title, notice.Message, notice.IsError, clicked);
+        ToastKind kind = notice.IsError ? ToastKind.Error : notice.Path is not null ? ToastKind.Success : ToastKind.Info;
+        ShowToast(notice.Title, notice.Message, kind, clicked);
+    }
+
+    private void ShowToast(string title, string message, ToastKind kind, Action? clicked)
+    {
+        _toast ??= new ToastWindow();
+        _toast.ShowToast(title, message, kind, clicked);
     }
 
     private void ExitApp()

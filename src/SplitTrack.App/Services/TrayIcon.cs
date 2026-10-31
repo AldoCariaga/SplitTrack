@@ -23,7 +23,6 @@ public sealed class TrayIcon : IDisposable
     private readonly ToolStripMenuItem _presets;
     private readonly Action<string> _selectPreset;
     private readonly Dictionary<TrayState, Icon> _icons;
-    private Action? _balloonClick;
 
     public TrayIcon(Action open, Action saveClip, Action toggleRecording, Action toggleReplay, Action<string> selectPreset, Action exit)
     {
@@ -51,7 +50,6 @@ public sealed class TrayIcon : IDisposable
                 open();
             }
         };
-        _icon.BalloonTipClicked += (_, _) => _balloonClick?.Invoke();
     }
 
     /// <param name="tooltip">At most 127 characters; longer text is cut.</param>
@@ -83,13 +81,6 @@ public sealed class TrayIcon : IDisposable
         {
             item.Checked = string.Equals(item.Text, preset, StringComparison.OrdinalIgnoreCase);
         }
-    }
-
-    /// <param name="clicked">Runs when the balloon is clicked.</param>
-    public void ShowBalloon(string title, string message, bool isError, Action? clicked = null)
-    {
-        _balloonClick = clicked;
-        _icon.ShowBalloonTip(4000, title, message, isError ? ToolTipIcon.Warning : ToolTipIcon.None);
     }
 
     public void Dispose()

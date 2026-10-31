@@ -86,7 +86,7 @@ window keeps it running there, and Exit is in the tray icon's menu.
 - **Top of the window**: what is being captured, one level meter per audio track with what it is
   recording right now (exe or device), and the buttons Save clip, Start/Stop recording and Replay
   buffer on/off. The same actions are in the tray menu and on the hotkeys (default Alt+F10 saves
-  a clip, Alt+F9 starts and stops a recording). A balloon reports each saved clip or recording,
+  a clip, Alt+F9 starts and stops a recording). A notification in the top-right corner reports each saved clip or recording,
   and problems such as a hotkey another program owns.
 - **Recording** starts on the next keyframe, at most a second after the press, and runs while the
   replay buffer keeps going; with the replay buffer off, the capture starts for the recording only.
