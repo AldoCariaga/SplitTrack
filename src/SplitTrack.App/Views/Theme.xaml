@@ -193,6 +193,126 @@
         </Setter>
     </Style>
 
+    <!-- The recorder's state as a colour (DataContext: RecorderViewModel): green replay, red recording, amber error. -->
+    <Style x:Key="StateFill" TargetType="Shape">
+        <Setter Property="Fill" Value="{DynamicResource TextFillColorDisabledBrush}" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding TrayState}" Value="Replay">
+                <Setter Property="Fill" Value="{StaticResource LiveBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding TrayState}" Value="Recording">
+                <Setter Property="Fill" Value="{StaticResource RecordBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding TrayState}" Value="Error">
+                <Setter Property="Fill" Value="{StaticResource WarnBrush}" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+    <!-- The status dot; it pulses while recording. -->
+    <Style x:Key="StateDot" TargetType="Ellipse" BasedOn="{StaticResource StateFill}">
+        <Setter Property="Width" Value="10" />
+        <Setter Property="Height" Value="10" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding TrayState}" Value="Recording">
+                <DataTrigger.EnterActions>
+                    <BeginStoryboard x:Name="Pulse">
+                        <Storyboard>
+                            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="1" To="0.3" Duration="0:0:0.8"
+                                             AutoReverse="True" RepeatBehavior="Forever" />
+                        </Storyboard>
+                    </BeginStoryboard>
+                </DataTrigger.EnterActions>
+                <DataTrigger.ExitActions>
+                    <StopStoryboard BeginStoryboardName="Pulse" />
+                </DataTrigger.ExitActions>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+    <!-- The line along the recorder dock's top edge; plain while idle. -->
+    <Style x:Key="StateStrip" TargetType="Rectangle" BasedOn="{StaticResource StateFill}">
+        <Setter Property="Fill" Value="Transparent" />
+        <Setter Property="Height" Value="2" />
+        <Setter Property="VerticalAlignment" Value="Top" />
+        <Setter Property="IsHitTestVisible" Value="False" />
+    </Style>
+
+    <!-- The running time and size of a recording, beside the state. -->
+    <Style x:Key="RecChip" TargetType="Border">
+        <Setter Property="Background" Value="#2EE5484D" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="Padding" Value="8,2" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="TextElement.Foreground" Value="{StaticResource RecordBrush}" />
+        <Setter Property="TextElement.FontWeight" Value="SemiBold" />
+        <Setter Property="TextElement.FontSize" Value="12" />
+    </Style>
+
+    <!-- A short vertical rule between groups of controls. -->
+    <Style x:Key="VDivider" TargetType="Rectangle">
+        <Setter Property="Width" Value="1" />
+        <Setter Property="Height" Value="24" />
+        <Setter Property="Margin" Value="16,0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Fill" Value="{DynamicResource DividerStrokeColorDefaultBrush}" />
+    </Style>
+
+    <!-- Page navigation: labels on a hairline, the selected one underlined with an accent pill. -->
+    <Style x:Key="NavTab" TargetType="TabItem">
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TabItem">
+                    <Grid Background="Transparent" Margin="0,0,4,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Border x:Name="Chip" CornerRadius="6" Padding="12,7" Margin="0,0,0,5" Background="Transparent">
+                            <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True" />
+                        </Border>
+                        <Border x:Name="Pill" Grid.Row="1" Width="20" Height="3" CornerRadius="1.5" HorizontalAlignment="Center"
+                                Background="{DynamicResource AccentFillColorDefaultBrush}" Visibility="Hidden" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Chip" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Pill" Property="Visibility" Value="Visible" />
+                            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="NavTabs" TargetType="TabControl">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="ItemContainerStyle" Value="{StaticResource NavTab}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TabControl">
+                    <Grid KeyboardNavigation.TabNavigation="Local">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <TabPanel x:Name="HeaderPanel" IsItemsHost="True" Margin="12,8,12,0" Panel.ZIndex="1" KeyboardNavigation.TabIndex="1" />
+                        <Rectangle Grid.Row="1" Height="1" Fill="{DynamicResource DividerStrokeColorDefaultBrush}" />
+                        <ContentPresenter x:Name="PART_SelectedContentHost" Grid.Row="2" ContentSource="SelectedContent" Margin="24,16,24,16"
+                                          KeyboardNavigation.TabNavigation="Local" KeyboardNavigation.DirectionalNavigation="Contained" KeyboardNavigation.TabIndex="2" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- Small dark label on a thumbnail or the video. -->
     <Style x:Key="Badge" TargetType="Border">
         <Setter Property="Background" Value="#B0000000" />

@@ -47,7 +47,7 @@ public sealed class TrackMeter(string title) : ObservableObject
     }
 }
 
-/// <summary>The recorder strip at the top of the window: state, buttons and one meter per track.</summary>
+/// <summary>The recorder dock at the bottom of the window: state, buttons and one meter per track.</summary>
 public sealed class RecorderViewModel : ObservableObject
 {
     private readonly RecorderService _service;
@@ -56,6 +56,7 @@ public sealed class RecorderViewModel : ObservableObject
     private string? _detailText;
     private string _videoText = string.Empty;
     private string _presetText = string.Empty;
+    private string _metaText = string.Empty;
     private bool _isRecording;
     private bool _replayOn;
     private bool _canSaveClip;
@@ -104,6 +105,13 @@ public sealed class RecorderViewModel : ObservableObject
     {
         get => _presetText;
         private set => Set(ref _presetText, value);
+    }
+
+    /// <summary>Video and preset on one line, skipping whichever is empty.</summary>
+    public string MetaText
+    {
+        get => _metaText;
+        private set => Set(ref _metaText, value);
     }
 
     public bool IsRecording
@@ -155,8 +163,8 @@ public sealed class RecorderViewModel : ObservableObject
     public string ClipHint => _service.ReplayEnabled
         ? _service.SaveClipHotkey is { } hotkey
             ? $"Press {hotkey} during a game to save the last {_service.Preset.Replay.BufferSeconds:0} seconds, or start a recording."
-            : "Save a clip with the button above, or start a recording."
-        : "Turn on the replay buffer above to save clips with a hotkey, or start a recording.";
+            : "Save a clip with the Save clip button below, or start a recording."
+        : "Turn on the replay buffer below to save clips with a hotkey, or start a recording.";
 
     /// <summary>Meters only move while the window shows them; the state is kept current for the tray either way.</summary>
     public bool MetersVisible
@@ -228,6 +236,8 @@ public sealed class RecorderViewModel : ObservableObject
         {
             VideoText = status is not null ? "Audio only" : string.Empty;
         }
+
+        MetaText = string.Join("  ·  ", new[] { VideoText, PresetText }.Where(s => !string.IsNullOrEmpty(s)));
 
         TrayState = IsRecording ? TrayState.Recording
             : state == RecorderState.Error ? TrayState.Error
