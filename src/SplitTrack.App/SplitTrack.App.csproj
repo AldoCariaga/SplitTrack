@@ -10,7 +10,7 @@
     <!-- The exe's icon is also the windows' and taskbar's; tools\make-icon.ps1 draws it. -->
     <ApplicationIcon>Assets\SplitTrack.ico</ApplicationIcon>
     <!-- Also the installer's version (installer\SplitTrack.iss reads it from the exe). -->
-    <Version>0.7.0</Version>
+    <Version>1.0.0</Version>
     <FFmpegExe>true</FFmpegExe>
     <!-- WPF0001: the Fluent theme (ThemeMode) is marked experimental. -->
     <NoWarn>$(NoWarn);WPF0001</NoWarn>
