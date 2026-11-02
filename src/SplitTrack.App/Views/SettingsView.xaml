@@ -109,23 +109,46 @@
                     </StackPanel>
                 </Border>
 
+                <!-- Preset and the cards that belong to it (Video, Audio tracks, Replay buffer), joined by a rail. -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Rectangle Width="3" RadiusX="1.5" RadiusY="1.5" Fill="{StaticResource BrandBrush}" Margin="0,24,12,24"
+                               ToolTip="These settings belong to the selected preset" />
+                    <StackPanel Grid.Column="1">
+
                 <!-- Preset -->
                 <Border Style="{StaticResource Section}">
                     <StackPanel>
-                        <TextBlock Text="Preset" Style="{StaticResource SectionHeader}" />
+                        <TextBlock Text="Presets" Style="{StaticResource SectionHeader}" />
                         <TextBlock Style="{StaticResource SectionNote}"
-                                   Text="Video, audio tracks and the replay buffer belong to the preset chosen here. The library, hotkeys and app settings are shared by all presets." />
-                        <Grid Style="{StaticResource Row}">
+                                   Text="Each preset has its own video, audio and replay buffer settings. Pick a preset to change its settings below; picking it here doesn't switch to it. Library, hotkeys and app settings are the same for every preset." />
+                        <Grid Margin="0,0,0,16">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="Editing" Style="{StaticResource RowLabel}" />
-                            <ComboBox Grid.Column="1" ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset}" DisplayMemberPath="Name" MinWidth="240"
-                                      AutomationProperties.Name="Preset to edit" />
+                            <TextBlock Text="Preset" Style="{StaticResource RowLabel}" FontWeight="SemiBold" />
+                            <ComboBox Grid.Column="1" ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset}" MinWidth="260"
+                                      AutomationProperties.Name="Preset to edit">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel>
+                                            <Border DockPanel.Dock="Right" CornerRadius="4" Padding="6,1" Margin="12,0,0,0" VerticalAlignment="Center"
+                                                    Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                                    Visibility="{Binding IsDefault, Converter={StaticResource BoolToVisibility}}">
+                                                <TextBlock Text="Default" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                            </Border>
+                                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
                             <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="8,0,0,0">
-                                <Button Command="{Binding NewPresetCommand}" ToolTip="A copy of this preset under a new name" Margin="0,0,8,0">
+                                <Button Command="{Binding NewPresetCommand}" ToolTip="Makes a copy of this preset, without its games" Margin="0,0,8,0">
                                     <StackPanel Orientation="Horizontal">
                                         <TextBlock Text="&#xE710;" Style="{StaticResource Icon}" FontSize="12" Margin="0,0,8,0" />
                                         <TextBlock Text="New preset" />
@@ -137,31 +160,61 @@
                                 </Button>
                             </StackPanel>
                         </Grid>
-                        <Grid Style="{StaticResource Row}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Name" Style="{StaticResource RowLabel}" />
-                            <TextBox Grid.Column="1" Text="{Binding PresetName, UpdateSourceTrigger=PropertyChanged}" Width="240" AutomationProperties.Name="Preset name" />
-                        </Grid>
-                        <Grid Style="{StaticResource Row}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Switch to it while" Style="{StaticResource RowLabel}" VerticalAlignment="Top" Margin="0,6,16,0" />
-                            <StackPanel Grid.Column="1">
-                                <DockPanel>
-                                    <Button Content="Add…" DockPanel.Dock="Right" Margin="8,0,0,0" Click="OnPickPresetGame" ToolTip="Pick from what is running now" />
-                                    <TextBox Text="{Binding PresetGames, UpdateSourceTrigger=PropertyChanged}" MinWidth="320" AutomationProperties.Name="Games that switch to this preset" />
-                                </DockPanel>
-                                <TextBlock Style="{StaticResource FieldHint}"
-                                           Text="Exe names, e.g. VALORANT-Win64-Shipping.exe. While one of them runs SplitTrack uses this preset, and goes back when it closes. A recording is never cut: the switch waits for it to stop." />
+
+                        <!-- Below the line: details of the preset picked above. -->
+                        <Border BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0" Padding="0,16,0,0">
+                            <StackPanel>
+                                <Grid Style="{StaticResource Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Name" Style="{StaticResource RowLabel}" />
+                                    <TextBox Grid.Column="1" Text="{Binding PresetName, UpdateSourceTrigger=PropertyChanged}" Width="260" AutomationProperties.Name="Preset name" />
+                                </Grid>
+                                <Grid Style="{StaticResource Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Auto-switch for" Style="{StaticResource RowLabel}" VerticalAlignment="Top" Margin="0,6,16,0" />
+                                    <StackPanel Grid.Column="1">
+                                        <DockPanel>
+                                            <Button DockPanel.Dock="Right" Margin="8,0,0,0" Click="OnPickPresetGame" ToolTip="Pick from what is running now">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="&#xE7FC;" Style="{StaticResource Icon}" FontSize="12" Margin="0,0,8,0" />
+                                                    <TextBlock Text="Add game…" />
+                                                </StackPanel>
+                                            </Button>
+                                            <TextBox Text="{Binding PresetGames, UpdateSourceTrigger=PropertyChanged}" MinWidth="320" AutomationProperties.Name="Games that switch to this preset" />
+                                        </DockPanel>
+                                        <TextBlock Style="{StaticResource FieldHint}"
+                                                   Text="Game .exe names separated by commas, e.g. VALORANT-Win64-Shipping.exe. While one is running, SplitTrack uses this preset, then goes back to the default. A recording in progress is never cut off." />
+                                    </StackPanel>
+                                </Grid>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Default" Style="{StaticResource RowLabel}" />
+                                    <!-- The default preset says so; any other offers to become it. -->
+                                    <DockPanel Grid.Column="1" MinHeight="32"
+                                               Visibility="{Binding IsDefaultPreset, Converter={StaticResource BoolToVisibility}}">
+                                        <TextBlock Text="&#xE73E;" Style="{StaticResource Icon}" Foreground="{StaticResource BrandBrush}" Margin="0,0,8,0" />
+                                        <TextBlock VerticalAlignment="Center" TextWrapping="Wrap"
+                                                   Text="This is the default preset. SplitTrack uses it when no game in any preset is running." />
+                                    </DockPanel>
+                                    <DockPanel Grid.Column="1"
+                                               Visibility="{Binding IsDefaultPreset, Converter={StaticResource InverseBoolToVisibility}}">
+                                        <Button Content="Make default" Command="{Binding MakeDefaultCommand}"
+                                                ToolTip="The tray menu's Preset submenu does the same" />
+                                        <TextBlock Style="{StaticResource FieldHint}" VerticalAlignment="Center" Margin="12,0,0,0"
+                                                   Text="The default preset is used when no game in any preset is running." />
+                                    </DockPanel>
+                                </Grid>
                             </StackPanel>
-                        </Grid>
-                        <CheckBox Content="Use this preset while none of the games above runs (the default preset)" IsChecked="{Binding IsDefaultPreset}"
-                                  ToolTip="Exactly one preset is the default; tick another one to change it. The tray menu can also switch it." />
+                        </Border>
                     </StackPanel>
                 </Border>
 
@@ -360,6 +413,9 @@
                         </Grid>
                     </StackPanel>
                 </Border>
+
+                    </StackPanel>
+                </Grid>
 
                 <!-- Hotkeys -->
                 <Border Style="{StaticResource Section}">

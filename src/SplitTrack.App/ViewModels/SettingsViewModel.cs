@@ -171,11 +171,15 @@ public sealed class TrackEditor : ObservableObject
 public sealed class PresetItem(PresetSettings data) : ObservableObject
 {
     private string _name = data.Name;
+    private bool _isDefault;
 
     /// <summary>The page's working copy; the fields are written back when another preset is selected or on save.</summary>
     public PresetSettings Data { get; } = data;
 
     public string Name { get => _name; set => Set(ref _name, value); }
+
+    /// <summary>Used while none of the presets' games runs; shown as a tag in the preset list.</summary>
+    public bool IsDefault { get => _isDefault; set => Set(ref _isDefault, value); }
 
     public override string ToString() => Name;
 }
@@ -236,6 +240,7 @@ public sealed class SettingsViewModel : ObservableObject
         OpenLogsCommand = new RelayCommand(() => Shell.OpenFolder(AppPaths.Logs));
         NewPresetCommand = new RelayCommand(NewPreset);
         DeletePresetCommand = new RelayCommand(DeletePreset, () => Presets.Count > 1);
+        MakeDefaultCommand = new RelayCommand(() => IsDefaultPreset = true);
         Rescan();
         Load();
     }
@@ -290,7 +295,7 @@ public sealed class SettingsViewModel : ObservableObject
         {
             if (value && _selectedPreset is not null)
             {
-                _defaultPreset = _selectedPreset;
+                SetDefaultPreset(_selectedPreset);
             }
 
             OnPropertyChanged();
@@ -300,6 +305,8 @@ public sealed class SettingsViewModel : ObservableObject
     public RelayCommand NewPresetCommand { get; }
 
     public RelayCommand DeletePresetCommand { get; }
+
+    public RelayCommand MakeDefaultCommand { get; }
 
     public static IReadOnlyList<Choice<int>> FpsChoices { get; } = [new(30, "30"), new(60, "60"), new(120, "120"), new(144, "144")];
 
@@ -435,7 +442,7 @@ public sealed class SettingsViewModel : ObservableObject
             Presets.Add(new PresetItem(preset));
         }
 
-        _defaultPreset = Presets.First(p => p.Data == s.Active);
+        SetDefaultPreset(Presets.First(p => p.Data == s.Active));
         SelectedPreset = Presets.FirstOrDefault(p => RecorderSettings.NameEquals(p.Name, _service.Preset.Name)) ?? _defaultPreset;
 
         Errors = [];
@@ -566,10 +573,21 @@ public sealed class SettingsViewModel : ObservableObject
         Presets.Remove(deleted);
         if (_defaultPreset == deleted)
         {
-            _defaultPreset = Presets[0];
+            SetDefaultPreset(Presets[0]);
         }
 
         SelectedPreset = Presets[Math.Min(index, Presets.Count - 1)];
+    }
+
+    private void SetDefaultPreset(PresetItem item)
+    {
+        if (_defaultPreset is not null)
+        {
+            _defaultPreset.IsDefault = false;
+        }
+
+        _defaultPreset = item;
+        item.IsDefault = true;
     }
 
     private static List<string> SplitList(string text) =>

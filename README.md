@@ -195,9 +195,9 @@ are read as one preset named `Default` and written back as version 2.
 A preset is a capture setup: video, audio tracks and the replay buffer. The library folder, the
 hotkeys and Start with Windows are shared. In the app:
 
-- **Settings → Preset** picks the preset the page edits, makes new ones (a copy of the shown one)
-  and deletes them. Its **Switch to it while** list names the games that select it; the checkbox
-  under it makes it the default preset, used while none of those games runs.
+- **Settings → Presets** picks the preset the page edits (without switching to it), makes new ones
+  (a copy of the shown one) and deletes them. Its **Auto-switch for** list names the games that
+  select it; the checkbox under it makes it the default preset, used while none of those games runs.
 - **The tray menu's Preset submenu** (shown with two or more presets) switches by hand: the chosen
   one becomes the default.
 - **Games switch on their own.** About once a second the app checks whether a preset's game is
