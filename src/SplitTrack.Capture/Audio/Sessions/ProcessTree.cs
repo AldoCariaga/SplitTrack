@@ -56,22 +56,10 @@ public sealed class ProcessTree
     {
         var visited = new HashSet<int>();
         int current = pid;
-        while (visited.Add(current) && _byPid.TryGetValue(current, out ProcessEntry? entry))
+        while (visited.Add(current) &&
+               TryGetLiveParent(current, out ProcessEntry? entry, out ProcessEntry? parent) &&
+               string.Equals(parent.ExeName, entry.ExeName, StringComparison.OrdinalIgnoreCase))
         {
-            if (!_byPid.TryGetValue(entry.ParentPid, out ProcessEntry? parent) ||
-                parent.Pid == current ||
-                !string.Equals(parent.ExeName, entry.ExeName, StringComparison.OrdinalIgnoreCase))
-            {
-                break;
-            }
-
-            long? parentCreated = GetCreationTime(parent.Pid);
-            long? childCreated = GetCreationTime(current);
-            if (parentCreated is { } p && childCreated is { } c && p > c)
-            {
-                break;
-            }
-
             current = parent.Pid;
         }
 
@@ -79,37 +67,56 @@ public sealed class ProcessTree
     }
 
     /// <summary>
-    /// Whether <paramref name="pid"/> is <paramref name="root"/> or one of its descendants, by parent
-    /// links: what a process loopback capture of <paramref name="root"/>'s tree includes. A parent
-    /// created after its child is a reused PID and ends the chain.
+    /// The PIDs from <paramref name="pid"/> up through its parents, itself first, by parent links:
+    /// every root whose process loopback tree capture includes it. A parent created after its child
+    /// is a reused PID and ends the chain.
     /// </summary>
-    public bool IsInTree(int pid, int root)
+    public IReadOnlyList<int> GetAncestry(int pid)
     {
+        var chain = new List<int>();
         var visited = new HashSet<int>();
         int current = pid;
-        while (visited.Add(current))
+        while (_byPid.ContainsKey(current) && visited.Add(current))
         {
-            if (current == root)
+            chain.Add(current);
+            if (!TryGetLiveParent(current, out _, out ProcessEntry? parent))
             {
-                return true;
-            }
-
-            if (!_byPid.TryGetValue(current, out ProcessEntry? entry) || !_byPid.TryGetValue(entry.ParentPid, out ProcessEntry? parent))
-            {
-                return false;
-            }
-
-            long? parentCreated = GetCreationTime(parent.Pid);
-            long? childCreated = GetCreationTime(current);
-            if (parentCreated is { } p && childCreated is { } c && p > c)
-            {
-                return false;
+                break;
             }
 
             current = parent.Pid;
         }
 
-        return false;
+        return chain;
+    }
+
+    /// <summary>
+    /// <paramref name="pid"/>'s entry and its parent's, when the parent is still the process that
+    /// started it: a parent that is the process itself, or was created after it (a reused PID), is none.
+    /// </summary>
+    private bool TryGetLiveParent(
+        int pid,
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out ProcessEntry? entry,
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out ProcessEntry? parent)
+    {
+        parent = null;
+        if (!_byPid.TryGetValue(pid, out entry) ||
+            entry.ParentPid == pid ||
+            !_byPid.TryGetValue(entry.ParentPid, out parent))
+        {
+            parent = null;
+            return false;
+        }
+
+        long? parentCreated = GetCreationTime(parent.Pid);
+        long? childCreated = GetCreationTime(pid);
+        if (parentCreated is { } p && childCreated is { } c && p > c)
+        {
+            parent = null;
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>Creation time as a FILETIME value, or null when the process cannot be opened.</summary>

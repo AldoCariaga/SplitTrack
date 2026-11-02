@@ -43,6 +43,10 @@ internal sealed class SourceWatcher : IDisposable
 
     // When to retry a program the System mix could not capture, by PID.
     private readonly Dictionary<int, long> _mixRetryAt = [];
+
+    // Creation time of each program in the System mix, to tell a reused PID apart.
+    private readonly Dictionary<int, long?> _mixCreated = [];
+    private bool _mixScanFailing;
     private readonly ManualResetEventSlim _stop = new();
     private int _devicesVersion = -1;
 
@@ -208,7 +212,9 @@ internal sealed class SourceWatcher : IDisposable
             return;
         }
 
-        // Our own process plays nothing, so excluding it means "everything".
+        // One capture of everything except one tree. With no game that is our own process, whose only
+        // sound is the player's (clip previews), so it means "everything" and leaves previews out. With
+        // a game only the game can be left out, so previews are recorded then; the mix leaves them out.
         int excludePid = game?.Pid ?? Environment.ProcessId;
         if (track.Identity is { } current && track.Fault is null && current.Pid == excludePid)
         {
@@ -232,7 +238,7 @@ internal sealed class SourceWatcher : IDisposable
     /// </summary>
     private void ReconcileSystemMix(AudioTrack track, ProcessTree tree, IReadOnlyList<SourceIdentity> excluded, long now)
     {
-        if (_systemMix is null || track.Identity is null || !ReferenceEquals(track.Identity, _systemMixIdentity))
+        if (_systemMix is null || track.Identity is null || !ReferenceEquals(track.Identity, _systemMixIdentity) || track.Fault is not null)
         {
             if (!CanRetry(track, now))
             {
@@ -245,63 +251,110 @@ internal sealed class SourceWatcher : IDisposable
             Attach(track, mix, identity, now);
             (_systemMix, _systemMixIdentity) = (mix, identity);
             _mixRetryAt.Clear();
+            _mixCreated.Clear();
         }
 
+        // The mix hands itself on with the clock, so a failed scan only delays changes to who is in it.
+        try
+        {
+            UpdateMix(_systemMix, tree, excluded, now);
+            if (_mixScanFailing)
+            {
+                _mixScanFailing = false;
+                Log.Info($"{track.Title}: listing programs with sound works again");
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!_mixScanFailing)
+            {
+                _mixScanFailing = true;
+                Log.Warn($"{track.Title}: could not list programs with sound; trying again every {Interval.TotalMilliseconds:0} ms", ex);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Brings programs with a new audio session into the mix. A program stays in until it exits or
+    /// is no longer allowed, not just until its sound ends: one that opens a stream per sound would
+    /// otherwise lose the start of each one while it is captured again.
+    /// </summary>
+    private void UpdateMix(ProcessMixSource mix, ProcessTree tree, IReadOnlyList<SourceIdentity> excluded, long now)
+    {
         // Our own process plays the player's audio.
         List<int> excludedRoots = excluded.Select(i => i.Pid).OfType<int>().Append(Environment.ProcessId).ToList();
-        HashSet<int> wanted = FindMixTargets(tree, excludedRoots);
-        foreach (int pid in _systemMix.FaultedPids)
+        foreach (int pid in mix.FaultedPids.Concat(mix.TakeFailedPids()))
         {
-            _systemMix.Remove(pid);
+            mix.Remove(pid);
+            _mixCreated.Remove(pid);
             _mixRetryAt[pid] = now + RetryTicks;
         }
 
-        IReadOnlyList<int> current = _systemMix.Pids;
-        foreach (int pid in current.Where(p => !wanted.Contains(p)))
+        IReadOnlyList<int> current = mix.Pids;
+        var stillRunning = current.Where(pid => IsSameProcess(pid, tree)).ToHashSet();
+        HashSet<int> targets = FindMixTargets(tree, AudioSessionScanner.ScanSessionPids().Concat(stillRunning), excludedRoots);
+
+        // A reused PID is taken in again as the new program on the next pass.
+        foreach (int pid in current.Where(p => !targets.Contains(p) || !stillRunning.Contains(p)))
         {
-            _systemMix.Remove(pid);
+            mix.Remove(pid);
+            _mixCreated.Remove(pid);
         }
 
-        foreach (int pid in wanted.Where(p => !current.Contains(p)))
+        foreach (int pid in targets.Where(p => !current.Contains(p)))
         {
             if (_mixRetryAt.TryGetValue(pid, out long at) && now < at)
             {
                 continue;
             }
 
-            try
-            {
-                _systemMix.Add(pid, tree.Get(pid)!.ExeName);
-                _mixRetryAt.Remove(pid);
-            }
-            catch (Exception ex)
-            {
-                _mixRetryAt[pid] = now + RetryTicks;
-                Log.Warn($"{track.Title}: could not capture pid {pid}, retrying", ex);
-            }
+            _mixRetryAt.Remove(pid);
+            _mixCreated[pid] = tree.GetCreationTime(pid);
+            mix.Request(pid, tree.Get(pid)!.ExeName);
         }
 
         foreach (int pid in _mixRetryAt.Keys.Where(p => tree.Get(p) is null).ToList())
         {
             _mixRetryAt.Remove(pid);
         }
-
-        _systemMix.Pump();
     }
 
+    // A program in the mix is still the one it was added as: running, and not a reused PID.
+    private bool IsSameProcess(int pid, ProcessTree tree) =>
+        tree.Get(pid) is not null &&
+        (!_mixCreated.TryGetValue(pid, out long? created) || created is null || tree.GetCreationTime(pid) == created);
+
     /// <summary>
-    /// The programs with an audio session outside the excluded trees, each the topmost of them in
-    /// its tree (a tree capture includes the rest). One whose tree holds an excluded process, e.g.
-    /// the launcher that started the game, is left out: capturing it would bring the game back.
+    /// Of <paramref name="candidates"/> (programs with an audio session, and those already in the mix),
+    /// the running ones outside the excluded trees, each the topmost of them in its tree (a tree
+    /// capture includes the rest). One whose tree holds an excluded process, e.g. the launcher that
+    /// started the game, is left out: capturing it would bring the game back. One walk up the tree
+    /// per process.
     /// </summary>
-    private static HashSet<int> FindMixTargets(ProcessTree tree, IReadOnlyList<int> excludedRoots)
+    private static HashSet<int> FindMixTargets(ProcessTree tree, IEnumerable<int> candidates, IReadOnlyList<int> excludedRoots)
     {
-        List<int> candidates = AudioSessionScanner.ScanSessionPids()
-            .Where(pid => tree.Get(pid) is not null)
-            .Where(pid => !excludedRoots.Any(root => tree.IsInTree(pid, root) || tree.IsInTree(root, pid)))
-            .ToList();
-        return candidates
-            .Where(pid => !candidates.Any(other => other != pid && tree.IsInTree(pid, other)))
+        var excludedSet = excludedRoots.ToHashSet();
+
+        // The excluded roots and everything above them: any of these would capture an excluded tree.
+        var holdsExcluded = excludedRoots.SelectMany(tree.GetAncestry).ToHashSet();
+        var pool = new Dictionary<int, IReadOnlyList<int>>();
+        foreach (int pid in candidates.Distinct())
+        {
+            if (tree.Get(pid) is null || holdsExcluded.Contains(pid))
+            {
+                continue;
+            }
+
+            IReadOnlyList<int> ancestry = tree.GetAncestry(pid);
+            if (!ancestry.Any(excludedSet.Contains))
+            {
+                pool[pid] = ancestry;
+            }
+        }
+
+        return pool
+            .Where(entry => !entry.Value.Skip(1).Any(pool.ContainsKey))
+            .Select(entry => entry.Key)
             .ToHashSet();
     }
 
