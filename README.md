@@ -114,7 +114,7 @@ SplitTrack.RecordCli record [--monitor <n> | --window <hwnd|exe|title text> | --
                             [--fps 60] [--bitrate <Mbps, 20>] [--height <px>] [--encoder auto|amf|nvenc|qsv|x264]
                             [--cursor | --no-cursor] [--adapter <n>]
                             [--game <exe[,exe...]>] [--app <Title>=<exe[,exe...]>]... [--mic [name[,name...]]]
-                            [--system] [--no-audio] [--audio-bitrate <kbps, 160>]
+                            [--system | --system-with-apps] [--no-audio] [--audio-bitrate <kbps, 160>]
                             [--seconds <n>] [--out <dir>] [--settings <file>] [--preset <name>]
 SplitTrack.RecordCli replay [same options as record] [--buffer <s, 60>] [--hotkey <keys, Alt+F10>] [--record | --no-record]
 SplitTrack.RecordCli settings [--settings <file>]
@@ -166,7 +166,7 @@ out-of-range values are reported with their line and name):
           { "title": "Game", "kind": "game", "processes": ["auto"] },
           { "title": "Discord", "kind": "app", "processes": ["Discord.exe"] },
           { "title": "Mic", "kind": "microphone", "devices": ["Tamago"] },   // no devices: default mic
-          { "title": "System", "kind": "system" }
+          { "title": "System", "kind": "system" }   // "leaveOutApps": false records the app tracks in it too
         ]
       },
       "replay": {
@@ -210,7 +210,7 @@ RecordCli does not follow games: `--preset <name>` picks one for the run (defaul
 one), and `settings save --preset <name> ...` makes it the active one, creating it as a copy of
 the active preset if the name is new.
 
-On the command line, any of `--game`, `--app`, `--mic`, `--system` and `--no-audio` replaces the
+On the command line, any of `--game`, `--app`, `--mic`, `--system`, `--system-with-apps` and `--no-audio` replaces the
 whole track list (in the order Game, apps, Mic, System); the other options change one value each.
 
 ### Tracks
@@ -225,7 +225,21 @@ audio track:
 | `game` (`--game X,Y`) | `Game` | The first of the process trees X, Y that is running. It may start after the recording and restart during it. `auto` stands for the program that is full screen in front (see below). At most one |
 | `app` (`--app Title=X`, repeatable) | `Title` | Same rules, e.g. `--app Discord=Discord.exe` |
 | `microphone` (`--mic [name,...]`) | `Mic` | Default microphone, or the first present whose name contains one of the names; follows device changes and replugs |
-| `system` (`--system`) | `System` | Everything except the game and the app tracks (everything while none runs). While an app track records, every other program with an audio session is captured on its own and mixed, since Windows can leave only one program out of a capture; one that starts playing mid-recording joins within a quarter of a second. At most one |
+| `system` (`--system`) | `System` | Everything except the game and the app tracks (everything while none runs). While an app track records, every other program with an audio session is captured on its own and mixed, since Windows can leave only one program out of a capture; one that starts playing mid-recording joins within a quarter of a second and stays until it exits. At most one. See the limits below |
+| `system` with `"leaveOutApps": false` (`--system-with-apps`) | `System` | Everything except the game, in one capture: nothing slips past it, but the app tracks are in it too (Discord is heard twice if you mix both) |
+
+Leaving the app tracks out has limits, all from what Windows tells SplitTrack:
+
+- **Windows' own sounds** (error and notification dings) usually report no program, so they are
+  missing from System while an app track records.
+- **Programs that started the game, an app track or SplitTrack**, e.g. Windows Explorer or the
+  terminal you ran RecordCli from, cannot be captured without what they started, so their own sounds
+  are left out.
+- **The first sound of a program** that had none yet loses up to a quarter of a second or so
+  while SplitTrack starts capturing it; its later sounds are complete.
+
+Turn `leaveOutApps` off (in the app: untick "Leave app tracks out" on the System track) if those
+sounds matter more than hearing Discord twice.
 
 A process list is tried in order only while nothing is captured: a running game is kept even if
 one earlier in the list starts later.
@@ -290,9 +304,9 @@ second or two and lose nothing:
 | `--reencode` | Re-encode even if nothing else asks for it |
 | `--encoder` | Encoder for a re-encode. `auto` takes the first GPU encoder that works (AMF, NVENC, QSV), else x264; with `--size` it takes x264, whose rate control lands on target (GPU encoders stop at a quality floor at low bitrates) |
 
-Audio stays in sync to the sample however the file is cut. `System` records everything except the
-game, so it also contains Discord: when both are chosen and Discord was captured, `export` says
-so. Ctrl+C cancels and removes the unfinished file. `encoders` shows which encoders work for
+Audio stays in sync to the sample however the file is cut. When `System` also contains Discord
+(recorded with `leaveOutApps` off, or before SplitTrack left the app tracks out) and both are
+chosen, `export` says so. Ctrl+C cancels and removes the unfinished file. `encoders` shows which encoders work for
 re-encoding on this PC.
 
 ## AudioPoc commands
@@ -362,7 +376,9 @@ Logs: `%LOCALAPPDATA%\SplitTrack\logs`.
 2. In a Discord call, with the game running:
    `SplitTrack.RecordCli.exe record --game <Game>.exe --app Discord=Discord.exe --mic --system --seconds 60 --out C:\Temp\poc`
 3. Open the MKV in VLC and switch between the tracks (Audio → Audio Track). Check:
-   - Game has only the game, Discord only the call, Mic only you, System everything except the game and Discord;
+   - Game has only the game, Discord only the call, Mic only you, System everything except the game and Discord
+     (with `--system-with-apps` instead: Discord and Windows dings in System too);
+   - a second Discord or Slack notification is complete in System;
    - gunshots and voices line up with the picture;
    - the summary shows every track at the same length, and `Corr` within a few hundred ppm.
 4. Start a recording *before* the game, quit the game and start it again mid-recording: the Game

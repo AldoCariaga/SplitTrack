@@ -65,7 +65,7 @@ internal static class RecordCommand
                 AudioTrackKind.Microphone => track.Targets.Count == 0
                     ? "default microphone"
                     : $"first microphone matching {string.Join(" or ", track.Targets.Select(t => $"'{t}'"))}",
-                _ => "everything except the game and app tracks",
+                _ => track.LeaveOutApps ? "everything except the game and app tracks" : "everything except the game (app tracks included)",
             };
             Console.WriteLine($"Audio: {track.Title,-10} {what}, AAC {recording.AudioBitrateKbps} kbps");
         }

@@ -23,6 +23,7 @@ public sealed class TrackEditor : ObservableObject
     private string _title;
     private AudioTrackKind _kind;
     private string _targets;
+    private bool _leaveOutApps;
 
     public TrackEditor(SettingsViewModel owner, TrackSettings track)
     {
@@ -30,6 +31,7 @@ public sealed class TrackEditor : ObservableObject
         _title = track.Title;
         _kind = track.Kind ?? AudioTrackKind.App;
         _targets = string.Join(", ", (_kind == AudioTrackKind.Microphone ? track.Devices : track.Processes) ?? []);
+        _leaveOutApps = track.LeaveOutApps ?? true;
         RemoveCommand = new RelayCommand(() => owner.Tracks.Remove(this));
         UpCommand = new RelayCommand(() => Move(-1), () => owner.Tracks.IndexOf(this) > 0);
         DownCommand = new RelayCommand(() => Move(1), () => owner.Tracks.IndexOf(this) < owner.Tracks.Count - 1);
@@ -41,7 +43,7 @@ public sealed class TrackEditor : ObservableObject
         new(AudioTrackKind.Game, "Game"),
         new(AudioTrackKind.App, "App, e.g. Discord"),
         new(AudioTrackKind.Microphone, "Microphone"),
-        new(AudioTrackKind.System, "System (all but the game and apps)"),
+        new(AudioTrackKind.System, "System (all but the game)"),
     ];
 
     public RelayCommand RemoveCommand { get; }
@@ -67,6 +69,7 @@ public sealed class TrackEditor : ObservableObject
             {
                 OnPropertyChanged(nameof(TargetsLabel));
                 OnPropertyChanged(nameof(HasTargets));
+                OnPropertyChanged(nameof(IsSystem));
                 OnPropertyChanged(nameof(Suggestions));
                 OnPropertyChanged(nameof(TargetsHint));
             }
@@ -81,6 +84,21 @@ public sealed class TrackEditor : ObservableObject
 
     public bool HasTargets => Kind != AudioTrackKind.System;
 
+    public bool IsSystem => Kind == AudioTrackKind.System;
+
+    /// <summary>System only: leave the app tracks out too; some Windows sounds may then be missing.</summary>
+    public bool LeaveOutApps
+    {
+        get => _leaveOutApps;
+        set
+        {
+            if (Set(ref _leaveOutApps, value))
+            {
+                OnPropertyChanged(nameof(TargetsHint));
+            }
+        }
+    }
+
     public string TargetsLabel => Kind switch
     {
         AudioTrackKind.Microphone => "Microphones",
@@ -93,7 +111,9 @@ public sealed class TrackEditor : ObservableObject
         AudioTrackKind.Microphone => "Name parts, first one present wins; empty = default microphone",
         AudioTrackKind.Game => "Exe names, first one running wins, e.g. cs2.exe; auto = whatever is full screen in front",
         AudioTrackKind.App => "Exe names, e.g. Discord.exe",
-        _ => "Everything you hear except the game and the app tracks",
+        _ => LeaveOutApps
+            ? "Everything you hear except the game and the app tracks. Some Windows sounds may be missing while an app track records"
+            : "Everything you hear except the game, app tracks included",
     };
 
     public IReadOnlyList<string> Suggestions => Kind == AudioTrackKind.Microphone ? _owner.Microphones : _owner.Programs;
@@ -107,6 +127,7 @@ public sealed class TrackEditor : ObservableObject
             Kind = Kind,
             Processes = Kind is AudioTrackKind.Game or AudioTrackKind.App ? targets : null,
             Devices = Kind == AudioTrackKind.Microphone && targets.Count > 0 ? targets : null,
+            LeaveOutApps = Kind == AudioTrackKind.System && !LeaveOutApps ? false : null,
         };
     }
 

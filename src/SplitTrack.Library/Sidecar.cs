@@ -19,7 +19,19 @@ public sealed record SidecarVideo(int Width, int Height, int Fps, int BitrateKbp
 /// <param name="Kind">game, app, microphone or system.</param>
 /// <param name="Targets">As configured: exe names or PIDs for game / app, device name filters for a microphone.</param>
 /// <param name="Source">What was last captured: exe name or device name; null if nothing was.</param>
-public sealed record SidecarTrack(int Stream, string Title, string Kind, IReadOnlyList<string> Targets, string? Source);
+/// <param name="LeftOutApps">
+/// System only: true when it left the app tracks out, false when it recorded them too; null in
+/// sidecars before version 3, whose System held the app tracks except right after it learned to leave them out.
+/// </param>
+public sealed record SidecarTrack(int Stream, string Title, string Kind, IReadOnlyList<string> Targets, string? Source, bool? LeftOutApps = null)
+{
+    // What System's Source was for the recordings made between leaving the app tracks out and version 3.
+    private const string EarlyMixSource = "all but the game and app tracks";
+
+    /// <summary>For a System track: whether the app tracks were left out of it, by the flag or, before it, by the source name.</summary>
+    [JsonIgnore]
+    public bool LeavesOutApps => LeftOutApps ?? Source == EarlyMixSource;
+}
 
 /// <summary>
 /// What the library knows about one recording or clip, stored next to it as JSON. Written after the
@@ -42,7 +54,8 @@ public sealed record Sidecar(
     double? ClipLengthSeconds = null)
 {
     // 2: kinds game/app (was process), track targets as a list, track source.
-    public const int CurrentVersion = 2;
+    // 3: System says whether it left the app tracks out (leftOutApps).
+    public const int CurrentVersion = 3;
 
     internal static readonly JsonSerializerOptions JsonOptions = new()
     {

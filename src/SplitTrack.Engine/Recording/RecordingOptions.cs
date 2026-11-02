@@ -13,7 +13,10 @@ public enum AudioTrackKind
     /// <summary>A capture device: the default one, or the first present that matches <see cref="AudioTrackOptions.Targets"/>.</summary>
     Microphone,
 
-    /// <summary>Everything except the game's and app tracks' process trees (everything while none runs). At most one per session.</summary>
+    /// <summary>
+    /// Everything except the game's process tree and, with <see cref="AudioTrackOptions.LeaveOutApps"/>,
+    /// the app tracks' (everything while none runs). At most one per session.
+    /// </summary>
     System,
 }
 
@@ -28,6 +31,13 @@ public sealed record AudioTrackOptions(string Title, AudioTrackKind Kind, IReadO
     public const string FullScreen = "auto";
 
     public IReadOnlyList<string> Targets { get; init; } = Targets ?? [];
+
+    /// <summary>
+    /// System only: leave the app tracks out as well as the game, by capturing every other program on
+    /// its own (Windows can leave only one program out of a capture). Off, System is one capture of
+    /// everything except the game: it then also holds the app tracks, but no sound slips past it.
+    /// </summary>
+    public bool LeaveOutApps { get; init; } = true;
 
     public static bool IsFullScreen(string target) => string.Equals(target, FullScreen, StringComparison.OrdinalIgnoreCase);
 }

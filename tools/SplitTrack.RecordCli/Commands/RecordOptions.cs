@@ -103,6 +103,7 @@ internal sealed class RecordOptions
         var apps = new List<TrackSettings>();
         TrackSettings? mic = null;
         bool system = false;
+        bool systemWithApps = false;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -178,6 +179,10 @@ internal sealed class RecordOptions
                 case "--system":
                     system = true;
                     break;
+                case "--system-with-apps":
+                    system = true;
+                    systemWithApps = true;
+                    break;
                 case "--no-audio":
                     noAudio = true;
                     break;
@@ -252,12 +257,12 @@ internal sealed class RecordOptions
 
         if (system)
         {
-            tracks.Add(new TrackSettings { Title = "System", Kind = AudioTrackKind.System });
+            tracks.Add(new TrackSettings { Title = "System", Kind = AudioTrackKind.System, LeaveOutApps = systemWithApps ? false : null });
         }
 
         if (noAudio && tracks.Count > 0)
         {
-            throw new UsageException("--no-audio cannot be combined with --game, --app, --mic or --system.");
+            throw new UsageException("--no-audio cannot be combined with --game, --app, --mic, --system or --system-with-apps.");
         }
 
         if (noAudio || tracks.Count > 0)

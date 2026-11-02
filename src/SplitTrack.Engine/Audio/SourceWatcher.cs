@@ -201,7 +201,7 @@ internal sealed class SourceWatcher : IDisposable
     {
         SourceIdentity? game = _game?.Identity;
         List<SourceIdentity> excluded = _apps.Select(t => t.Identity).OfType<SourceIdentity>().ToList();
-        if (excluded.Count > 0)
+        if (excluded.Count > 0 && track.Options.LeaveOutApps)
         {
             if (game is not null)
             {

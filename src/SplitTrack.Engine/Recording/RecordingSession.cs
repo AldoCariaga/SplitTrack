@@ -397,7 +397,9 @@ public sealed class RecordingSession : IDisposable
             ? null
             : new SidecarVideo(_video.Settings.Width, _video.Settings.Height, _video.Settings.Fps, _video.Settings.BitrateKbps, _video.EncoderKind.ShortName());
         var tracks = _tracks
-            .Select((t, i) => new SidecarTrack(_videoStream + 1 + i, t.Title, t.Options.Kind.ToString().ToLowerInvariant(), t.Options.Targets, t.LastSourceName))
+            .Select((t, i) => new SidecarTrack(
+                _videoStream + 1 + i, t.Title, t.Options.Kind.ToString().ToLowerInvariant(), t.Options.Targets, t.LastSourceName,
+                t.Options.Kind == AudioTrackKind.System ? t.Options.LeaveOutApps : null))
             .ToList();
         return new Sidecar(
             Sidecar.CurrentVersion,

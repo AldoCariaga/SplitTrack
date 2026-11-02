@@ -384,6 +384,13 @@ public sealed class TrackSettings
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<string>? Devices { get; set; }
 
+    /// <summary>
+    /// System: false records everything except the game in one capture, app tracks included, so no
+    /// Windows sound is missed. Missing or true leaves the app tracks out too.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? LeaveOutApps { get; set; }
+
     public AudioTrackOptions ToOptions()
     {
         AudioTrackKind kind = Kind ?? throw new InvalidOperationException($"Track '{Title}' has no kind; validate first.");
@@ -393,7 +400,7 @@ public sealed class TrackSettings
             AudioTrackKind.Microphone => Devices,
             _ => null,
         };
-        return new AudioTrackOptions(Title.Trim(), kind, Clean(targets));
+        return new AudioTrackOptions(Title.Trim(), kind, Clean(targets)) { LeaveOutApps = LeaveOutApps ?? true };
     }
 
     internal void Validate(List<string> errors, string name)
@@ -428,6 +435,11 @@ public sealed class TrackSettings
         if (kind != AudioTrackKind.Microphone && Clean(Devices).Count > 0)
         {
             errors.Add($"{name}.devices: only microphone tracks record devices");
+        }
+
+        if (kind != AudioTrackKind.System && LeaveOutApps is not null)
+        {
+            errors.Add($"{name}.leaveOutApps: only the system track leaves app tracks out");
         }
     }
 

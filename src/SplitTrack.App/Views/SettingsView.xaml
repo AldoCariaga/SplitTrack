@@ -203,6 +203,10 @@
                                         <Button Content="Add…" DockPanel.Dock="Right" Margin="6,0,0,0" Click="OnPickTarget" ToolTip="Pick from what is running or plugged in now" />
                                         <TextBox Text="{Binding Targets, UpdateSourceTrigger=PropertyChanged}" ToolTip="{Binding TargetsHint}" />
                                     </DockPanel>
+                                    <CheckBox Grid.Column="2" VerticalAlignment="Center" Content="Leave app tracks out"
+                                              IsChecked="{Binding LeaveOutApps}"
+                                              Visibility="{Binding IsSystem, Converter={StaticResource BoolToVisibility}}"
+                                              ToolTip="On: Discord and other app tracks are not heard twice, but some Windows sounds may be missing from System while one records. Off: System catches every sound except the game's, app tracks included." />
                                     <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="8,0,0,0">
                                         <Button Content="↑" Command="{Binding UpCommand}" ToolTip="Move up" MinWidth="32" Margin="0,0,4,0" />
                                         <Button Content="↓" Command="{Binding DownCommand}" ToolTip="Move down" MinWidth="32" Margin="0,0,4,0" />

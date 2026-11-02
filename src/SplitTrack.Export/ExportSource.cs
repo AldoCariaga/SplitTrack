@@ -10,7 +10,8 @@ namespace SplitTrack.Export;
 /// <param name="Number">1-based position among the audio tracks.</param>
 /// <param name="Kind">game, app, microphone or system (from the sidecar); null when unknown.</param>
 /// <param name="Source">The exe or device it captured last (from the sidecar).</param>
-public sealed record SourceTrack(int Stream, int Number, string Title, string? Kind, string? Source);
+/// <param name="LeavesOutApps">System: the app tracks were left out of it, so they are not heard twice.</param>
+public sealed record SourceTrack(int Stream, int Number, string Title, string? Kind, string? Source, bool LeavesOutApps = false);
 
 /// <summary>A recording or clip to export: the video file, its sidecar if any, and its tracks.</summary>
 public sealed class ExportSource
@@ -95,7 +96,7 @@ public sealed class ExportSource
         {
             SidecarTrack? described = sidecar?.AudioTracks?.FirstOrDefault(t => t.Stream == stream.Index);
             string title = described?.Title is { Length: > 0 } t ? t : stream.Title ?? $"Track {stream.Number}";
-            tracks.Add(new SourceTrack(stream.Index, stream.Number, title, described?.Kind, described?.Source));
+            tracks.Add(new SourceTrack(stream.Index, stream.Number, title, described?.Kind, described?.Source, described?.LeavesOutApps ?? false));
         }
 
         return tracks;

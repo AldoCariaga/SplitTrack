@@ -55,6 +55,8 @@ internal static class Program
               --app <Title>=<exe[,...]> Another per-app track (repeatable), e.g. --app Discord=Discord.exe
               --mic [name[,name...]]    "Mic": default microphone, or the first present containing a name
               --system                  "System": everything except the game and app tracks
+                                        (some Windows sounds may be missing while an app track records)
+              --system-with-apps        "System": everything except the game, app tracks included
               --no-audio                No audio tracks
               --audio-bitrate <kbps>    AAC bitrate per track (default 160)
               (default tracks: Game = auto, Mic, System)
