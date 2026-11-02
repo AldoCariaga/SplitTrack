@@ -1,5 +1,9 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Globalization;
+using System.Windows.Input;
+using System.Windows.Threading;
 using SplitTrack.App.Services;
 using SplitTrack.Capture.Audio.Sessions;
 using SplitTrack.Capture.Audio.Wasapi;
@@ -24,6 +28,7 @@ public sealed class TrackEditor : ObservableObject
     private AudioTrackKind _kind;
     private string _targets;
     private bool _leaveOutApps;
+    private int _colorIndex;
 
     public TrackEditor(SettingsViewModel owner, TrackSettings track)
     {
@@ -47,6 +52,9 @@ public sealed class TrackEditor : ObservableObject
     ];
 
     public RelayCommand RemoveCommand { get; }
+
+    /// <summary>Position in the track palette; see <see cref="TrackColors"/>. Set by the page when kinds or order change.</summary>
+    public int ColorIndex { get => _colorIndex; set => Set(ref _colorIndex, value); }
 
     public RelayCommand UpCommand { get; }
 
@@ -200,12 +208,29 @@ public sealed class SettingsViewModel : ObservableObject
     private string? _message;
     private bool _messageIsError;
     private IReadOnlyList<string> _errors = [];
+    private string? _snapshot;
+    private bool _savedStartWithWindows;
+    private bool _isDirty;
+    private bool _dirtyCheckQueued;
+
+    // Changes to these are not edits of the settings.
+    private static readonly HashSet<string?> NotEdits =
+        [nameof(Message), nameof(MessageIsError), nameof(Errors), nameof(IsDirty), nameof(ShowSaveBar), nameof(Programs), nameof(Microphones)];
 
     public SettingsViewModel(RecorderService service)
     {
         _service = service;
         SaveCommand = new RelayCommand(Save);
-        RevertCommand = new RelayCommand(Load);
+        RevertCommand = new RelayCommand(Load, () => IsDirty);
+        PropertyChanged += (_, e) =>
+        {
+            if (!NotEdits.Contains(e.PropertyName))
+            {
+                QueueDirtyCheck();
+            }
+        };
+        Tracks.CollectionChanged += OnEditableItemsChanged;
+        Presets.CollectionChanged += OnEditableItemsChanged;
         AddTrackCommand = new RelayCommand(() => Tracks.Add(new TrackEditor(this, new TrackSettings { Title = NewTitle(), Kind = AudioTrackKind.App, Processes = [] })));
         RescanCommand = new RelayCommand(Rescan);
         OpenLogsCommand = new RelayCommand(() => Shell.OpenFolder(AppPaths.Logs));
@@ -360,11 +385,38 @@ public sealed class SettingsViewModel : ObservableObject
 
     public bool StartWithWindows { get => _startWithWindows; set => Set(ref _startWithWindows, value); }
 
-    public string? Message { get => _message; private set => Set(ref _message, value); }
+    public string? Message
+    {
+        get => _message;
+        private set
+        {
+            if (Set(ref _message, value))
+            {
+                OnPropertyChanged(nameof(ShowSaveBar));
+            }
+        }
+    }
 
     public bool MessageIsError { get => _messageIsError; private set => Set(ref _messageIsError, value); }
 
     public IReadOnlyList<string> Errors { get => _errors; private set => Set(ref _errors, value); }
+
+    /// <summary>The page differs from the settings in use.</summary>
+    public bool IsDirty
+    {
+        get => _isDirty;
+        private set
+        {
+            if (Set(ref _isDirty, value))
+            {
+                OnPropertyChanged(nameof(ShowSaveBar));
+                CommandManager.InvalidateRequerySuggested();
+            }
+        }
+    }
+
+    /// <summary>The save bar shows while there is something to save or to say.</summary>
+    public bool ShowSaveBar => IsDirty || Message is not null;
 
     /// <summary>Fills the page from the settings in use, showing the preset in use.</summary>
     public void Load()
@@ -388,6 +440,7 @@ public sealed class SettingsViewModel : ObservableObject
 
         Errors = [];
         Message = null;
+        TakeSnapshot();
     }
 
     /// <summary>The page as settings; not validated.</summary>
@@ -557,6 +610,7 @@ public sealed class SettingsViewModel : ObservableObject
                 StartupEntry.Set(StartWithWindows);
             }
 
+            TakeSnapshot();
             Errors = [];
             MessageIsError = false;
             Message = _service.IsRecording ? "Saved. The new settings apply when the recording stops." : "Saved. Capture restarted with the new settings.";
@@ -565,6 +619,88 @@ public sealed class SettingsViewModel : ObservableObject
         {
             ShowErrors([ex.Message]);
         }
+    }
+
+    /// <summary>Remembers the page as saved, so later edits show the save bar.</summary>
+    private void TakeSnapshot()
+    {
+        _snapshot = SerializePage();
+        _savedStartWithWindows = StartWithWindows;
+        IsDirty = false;
+    }
+
+    private string? SerializePage()
+    {
+        try
+        {
+            return SettingsFile.Serialize(Build());
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private void OnEditableItemsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        foreach (INotifyPropertyChanged item in e.NewItems?.OfType<INotifyPropertyChanged>() ?? [])
+        {
+            item.PropertyChanged += OnEditableItemChanged;
+        }
+
+        foreach (INotifyPropertyChanged item in e.OldItems?.OfType<INotifyPropertyChanged>() ?? [])
+        {
+            item.PropertyChanged -= OnEditableItemChanged;
+        }
+
+        if (sender == Tracks)
+        {
+            UpdateTrackColors();
+        }
+
+        QueueDirtyCheck();
+    }
+
+    private void OnEditableItemChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(TrackEditor.Kind))
+        {
+            UpdateTrackColors();
+        }
+
+        QueueDirtyCheck();
+    }
+
+    private void UpdateTrackColors()
+    {
+        IReadOnlyList<int> colors = TrackColors.For(Tracks.Select(t => SettingsFile.KindName(t.Kind)));
+        for (int i = 0; i < Tracks.Count; i++)
+        {
+            Tracks[i].ColorIndex = colors[i];
+        }
+    }
+
+    /// <summary>Compares the page with the snapshot once the current burst of changes is over.</summary>
+    private void QueueDirtyCheck()
+    {
+        if (_dirtyCheckQueued)
+        {
+            return;
+        }
+
+        _dirtyCheckQueued = true;
+        Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        {
+            _dirtyCheckQueued = false;
+            bool dirty = SerializePage() is not { } page || page != _snapshot || StartWithWindows != _savedStartWithWindows;
+            if (dirty && !IsDirty && !MessageIsError)
+            {
+                // "Saved." no longer describes the page.
+                Message = null;
+            }
+
+            IsDirty = dirty;
+        });
     }
 
     private void ShowErrors(IReadOnlyList<string> errors)

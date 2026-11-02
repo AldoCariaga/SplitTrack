@@ -4,32 +4,81 @@
              xmlns:vm="clr-namespace:SplitTrack.App.ViewModels"
              xmlns:views="clr-namespace:SplitTrack.App.Views">
     <UserControl.Resources>
+        <!-- A field row: label in a column shared by the whole page, then the field. -->
         <Style x:Key="Row" TargetType="Grid">
-            <Setter Property="Margin" Value="0,0,0,10" />
+            <Setter Property="Margin" Value="0,0,0,12" />
+        </Style>
+        <Style x:Key="RowLabel" TargetType="TextBlock" BasedOn="{StaticResource FieldLabel}">
+            <Setter Property="MinWidth" Value="164" />
+        </Style>
+        <Style x:Key="Section" TargetType="Border" BasedOn="{StaticResource Card}">
+            <Setter Property="Margin" Value="0,0,0,12" />
+            <Setter Property="Padding" Value="20,16" />
+        </Style>
+        <Style x:Key="SectionNote" TargetType="TextBlock" BasedOn="{StaticResource Secondary}">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Margin" Value="0,0,0,14" />
+        </Style>
+        <Style x:Key="FieldHint" TargetType="TextBlock" BasedOn="{StaticResource Secondary}">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Margin" Value="0,4,0,0" />
+        </Style>
+        <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="MinWidth" Value="34" />
+            <Setter Property="Padding" Value="8,6" />
         </Style>
     </UserControl.Resources>
-    <DockPanel Margin="0,8,0,0">
-        <!-- Save bar -->
-        <Border DockPanel.Dock="Top" Style="{StaticResource Card}" Padding="12" Margin="0,0,0,8">
+
+    <DockPanel Margin="0,12,0,0">
+        <!-- Save bar: only while something changed or there is something to say -->
+        <Border DockPanel.Dock="Bottom" Style="{StaticResource Card}" Padding="16,12" Margin="0,8,0,0"
+                Background="{DynamicResource SolidBackgroundFillColorSecondaryBrush}"
+                Visibility="{Binding ShowSaveBar, Converter={StaticResource BoolToVisibility}}">
             <StackPanel>
                 <DockPanel>
-                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                        <Button Content="Undo changes" Command="{Binding RevertCommand}" Margin="0,0,8,0" />
-                        <Button Content="Save and apply" Command="{Binding SaveCommand}" Style="{DynamicResource AccentButtonStyle}" />
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
+                        <Button Content="Undo changes" Command="{Binding RevertCommand}" Margin="0,0,8,0"
+                                Visibility="{Binding IsDirty, Converter={StaticResource BoolToVisibility}}" />
+                        <Button Content="Save and apply" Command="{Binding SaveCommand}" Style="{DynamicResource AccentButtonStyle}"
+                                Visibility="{Binding IsDirty, Converter={StaticResource BoolToVisibility}}" />
                     </StackPanel>
-                    <TextBlock Text="{Binding Message}" VerticalAlignment="Center" TextWrapping="Wrap">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding MessageIsError}" Value="True">
-                                        <Setter Property="Foreground" Value="{StaticResource RecordBrush}" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Margin="0,0,10,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource Icon}">
+                                    <Setter Property="Text" Value="&#xE73E;" />
+                                    <Setter Property="Foreground" Value="{StaticResource LiveBrush}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding MessageIsError}" Value="True">
+                                            <Setter Property="Text" Value="&#xE7BA;" />
+                                            <Setter Property="Foreground" Value="{StaticResource RecordBrush}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Message}" Value="{x:Null}">
+                                            <Setter Property="Text" Value="&#xE70F;" />
+                                            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock VerticalAlignment="Center" TextWrapping="Wrap">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="{Binding Message}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Message}" Value="{x:Null}">
+                                            <Setter Property="Text" Value="You have unsaved changes." />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding MessageIsError}" Value="True">
+                                            <Setter Property="Foreground" Value="{StaticResource RecordBrush}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
                 </DockPanel>
-                <ItemsControl ItemsSource="{Binding Errors}" Margin="0,6,0,0">
+                <ItemsControl ItemsSource="{Binding Errors}" Margin="26,6,0,0" Focusable="False">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <TextBlock Text="{Binding StringFormat='• {0}'}" Foreground="{StaticResource RecordBrush}" TextWrapping="Wrap" />
@@ -40,58 +89,74 @@
         </Border>
 
         <ScrollViewer VerticalScrollBarVisibility="Auto" views:SmoothScroll.IsEnabled="True">
-            <StackPanel Margin="4,0,20,24" MaxWidth="900" HorizontalAlignment="Left">
+            <StackPanel Margin="0,0,16,12" MaxWidth="900" HorizontalAlignment="Left" Grid.IsSharedSizeScope="True">
 
-                <TextBlock Text="Library" Style="{StaticResource SectionHeader}" Margin="0,4,0,8" />
-                <Grid Style="{StaticResource Row}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="180" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="Folder" Style="{StaticResource FieldLabel}" />
-                    <TextBox Grid.Column="1" Text="{Binding LibraryFolder, UpdateSourceTrigger=PropertyChanged}" MinWidth="360" />
-                    <Button Grid.Column="2" Content="Browse…" Margin="8,0,0,0" Click="OnBrowseLibrary" />
-                </Grid>
-
-                <TextBlock Text="Preset" Style="{StaticResource SectionHeader}" />
-                <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,0,0,10"
-                           Text="Video, audio tracks and the replay buffer below belong to the preset chosen here. The library, hotkeys and app settings are shared by all presets." />
-                <Border Style="{StaticResource Card}" Padding="12" Margin="0,0,0,8">
+                <!-- Library -->
+                <Border Style="{StaticResource Section}">
                     <StackPanel>
+                        <TextBlock Text="Library" Style="{StaticResource SectionHeader}" />
+                        <TextBlock Text="Where clips and recordings are saved." Style="{StaticResource SectionNote}" />
+                        <Grid Margin="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Folder" Style="{StaticResource RowLabel}" />
+                            <TextBox Grid.Column="1" Text="{Binding LibraryFolder, UpdateSourceTrigger=PropertyChanged}" MinWidth="360" AutomationProperties.Name="Library folder" />
+                            <Button Grid.Column="2" Content="Browse…" Margin="8,0,0,0" Click="OnBrowseLibrary" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Preset -->
+                <Border Style="{StaticResource Section}">
+                    <StackPanel>
+                        <TextBlock Text="Preset" Style="{StaticResource SectionHeader}" />
+                        <TextBlock Style="{StaticResource SectionNote}"
+                                   Text="Video, audio tracks and the replay buffer belong to the preset chosen here. The library, hotkeys and app settings are shared by all presets." />
                         <Grid Style="{StaticResource Row}">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="168" />
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="Editing" Style="{StaticResource FieldLabel}" />
-                            <ComboBox Grid.Column="1" ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset}" DisplayMemberPath="Name" MinWidth="240" />
+                            <TextBlock Text="Editing" Style="{StaticResource RowLabel}" />
+                            <ComboBox Grid.Column="1" ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset}" DisplayMemberPath="Name" MinWidth="240"
+                                      AutomationProperties.Name="Preset to edit" />
                             <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="8,0,0,0">
-                                <Button Content="New preset" Command="{Binding NewPresetCommand}" ToolTip="A copy of this preset under a new name" Margin="0,0,8,0" />
-                                <Button Content="Delete" Command="{Binding DeletePresetCommand}" />
+                                <Button Command="{Binding NewPresetCommand}" ToolTip="A copy of this preset under a new name" Margin="0,0,8,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE710;" Style="{StaticResource Icon}" FontSize="12" Margin="0,0,8,0" />
+                                        <TextBlock Text="New preset" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Command="{Binding DeletePresetCommand}" Style="{StaticResource IconButton}"
+                                        ToolTip="Delete this preset" AutomationProperties.Name="Delete preset">
+                                    <TextBlock Text="&#xE74D;" Style="{StaticResource Icon}" />
+                                </Button>
                             </StackPanel>
                         </Grid>
                         <Grid Style="{StaticResource Row}">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="168" />
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="Name" Style="{StaticResource FieldLabel}" />
-                            <TextBox Grid.Column="1" Text="{Binding PresetName, UpdateSourceTrigger=PropertyChanged}" Width="240" />
+                            <TextBlock Text="Name" Style="{StaticResource RowLabel}" />
+                            <TextBox Grid.Column="1" Text="{Binding PresetName, UpdateSourceTrigger=PropertyChanged}" Width="240" AutomationProperties.Name="Preset name" />
                         </Grid>
                         <Grid Style="{StaticResource Row}">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="168" />
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="Switch to it while" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,6,16,0" />
+                            <TextBlock Text="Switch to it while" Style="{StaticResource RowLabel}" VerticalAlignment="Top" Margin="0,6,16,0" />
                             <StackPanel Grid.Column="1">
                                 <DockPanel>
-                                    <Button Content="Add…" DockPanel.Dock="Right" Margin="6,0,0,0" Click="OnPickPresetGame" ToolTip="Pick from what is running now" />
-                                    <TextBox Text="{Binding PresetGames, UpdateSourceTrigger=PropertyChanged}" MinWidth="320" />
+                                    <Button Content="Add…" DockPanel.Dock="Right" Margin="8,0,0,0" Click="OnPickPresetGame" ToolTip="Pick from what is running now" />
+                                    <TextBox Text="{Binding PresetGames, UpdateSourceTrigger=PropertyChanged}" MinWidth="320" AutomationProperties.Name="Games that switch to this preset" />
                                 </DockPanel>
-                                <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0"
+                                <TextBlock Style="{StaticResource FieldHint}"
                                            Text="Exe names, e.g. VALORANT-Win64-Shipping.exe. While one of them runs SplitTrack uses this preset, and goes back when it closes. A recording is never cut: the switch waits for it to stop." />
                             </StackPanel>
                         </Grid>
@@ -100,170 +165,254 @@
                     </StackPanel>
                 </Border>
 
-                <TextBlock Text="Video" Style="{StaticResource SectionHeader}" />
-                <CheckBox Content="Record video (off: audio tracks only)" IsChecked="{Binding VideoEnabled}" Margin="0,0,0,10" />
-                <StackPanel IsEnabled="{Binding VideoEnabled}">
-                    <Grid Style="{StaticResource Row}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="180" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <RadioButton Content="Whole monitor" IsChecked="{Binding CaptureMonitor}" GroupName="capture" />
-                        <ComboBox Grid.Column="1" Grid.ColumnSpan="2" ItemsSource="{Binding Monitors}" SelectedValuePath="Value" SelectedValue="{Binding Monitor}"
-                                  MinWidth="320" HorizontalAlignment="Left" IsEnabled="{Binding CaptureMonitor}" />
-                    </Grid>
-                    <Grid Style="{StaticResource Row}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="180" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <RadioButton Content="One window" IsChecked="{Binding CaptureWindow}" GroupName="capture" />
-                        <StackPanel Grid.Column="1">
-                            <ComboBox IsEditable="True" ItemsSource="{Binding Programs}" Text="{Binding Window, UpdateSourceTrigger=PropertyChanged}"
-                                      MinWidth="320" HorizontalAlignment="Left" IsEnabled="{Binding CaptureWindow}" />
-                            <TextBlock Text="Exe name or part of the window title. Capture stops when it closes and starts again when it reopens."
-                                       Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0" />
-                        </StackPanel>
-                    </Grid>
-                    <Grid Style="{StaticResource Row}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="180" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="Frames per second" Style="{StaticResource FieldLabel}" />
-                        <ComboBox Grid.Column="1" ItemsSource="{x:Static vm:SettingsViewModel.FpsChoices}" SelectedValuePath="Value" SelectedValue="{Binding Fps}"
-                                  MinWidth="160" HorizontalAlignment="Left" />
-                    </Grid>
-                    <Grid Style="{StaticResource Row}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="180" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="Bitrate" Style="{StaticResource FieldLabel}" />
-                        <TextBox Grid.Column="1" Text="{Binding BitrateMbps, UpdateSourceTrigger=PropertyChanged}" Width="100" />
-                        <TextBlock Grid.Column="2" Text="Mbps (20 is good for 1080p60; more for 1440p)" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="8,0,0,0" />
-                    </Grid>
-                    <Grid Style="{StaticResource Row}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="180" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="Resolution" Style="{StaticResource FieldLabel}" />
-                        <ComboBox Grid.Column="1" ItemsSource="{x:Static vm:SettingsViewModel.HeightChoices}" SelectedValuePath="Value" SelectedValue="{Binding MaxHeight}"
-                                  MinWidth="200" HorizontalAlignment="Left" />
-                    </Grid>
-                    <Grid Style="{StaticResource Row}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="180" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="Encoder" Style="{StaticResource FieldLabel}" />
-                        <ComboBox Grid.Column="1" ItemsSource="{x:Static vm:SettingsViewModel.EncoderChoices}" SelectedValuePath="Value" SelectedValue="{Binding Encoder}"
-                                  MinWidth="200" HorizontalAlignment="Left" />
-                    </Grid>
-                    <Grid Style="{StaticResource Row}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="180" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="GPU" Style="{StaticResource FieldLabel}" />
-                        <TextBox Grid.Column="1" Text="{Binding Adapter, UpdateSourceTrigger=PropertyChanged}" Width="60" />
-                        <TextBlock Grid.Column="2" Text="0 is the first GPU; change only on PCs with several" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="8,0,0,0" />
-                    </Grid>
-                    <CheckBox Content="Show the mouse pointer" IsChecked="{Binding Cursor}" Margin="0,0,0,10" />
-                </StackPanel>
-
-                <DockPanel Margin="0,20,0,8">
-                    <Button Content="Look for programs and microphones again" Command="{Binding RescanCommand}" DockPanel.Dock="Right" />
-                    <TextBlock Text="Audio tracks" Style="{StaticResource SectionHeader}" Margin="0" VerticalAlignment="Center" />
-                </DockPanel>
-                <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,0,0,10"
-                           Text="Each track is kept separately in the file; you choose which ones to mix when you export. The first track is what plain video players play." />
-                <ItemsControl ItemsSource="{Binding Tracks}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type vm:TrackEditor}">
-                            <Border Style="{StaticResource Card}" Padding="12" Margin="0,0,0,8">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="130" />
-                                        <ColumnDefinition Width="250" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <TextBox Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}" ToolTip="Track name" Margin="0,0,8,0" />
-                                    <ComboBox Grid.Column="1" ItemsSource="{x:Static vm:TrackEditor.Kinds}" SelectedValuePath="Value" SelectedValue="{Binding Kind}" Margin="0,0,8,0" />
-                                    <DockPanel Grid.Column="2" Visibility="{Binding HasTargets, Converter={StaticResource BoolToVisibility}}">
-                                        <Button Content="Add…" DockPanel.Dock="Right" Margin="6,0,0,0" Click="OnPickTarget" ToolTip="Pick from what is running or plugged in now" />
-                                        <TextBox Text="{Binding Targets, UpdateSourceTrigger=PropertyChanged}" ToolTip="{Binding TargetsHint}" />
-                                    </DockPanel>
-                                    <CheckBox Grid.Column="2" VerticalAlignment="Center" Content="Leave app tracks out"
-                                              IsChecked="{Binding LeaveOutApps}"
-                                              Visibility="{Binding IsSystem, Converter={StaticResource BoolToVisibility}}"
-                                              ToolTip="On: Discord and other app tracks are not heard twice, but some Windows sounds may be missing from System while one records. Off: System catches every sound except the game's, app tracks included." />
-                                    <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="8,0,0,0">
-                                        <Button Content="↑" Command="{Binding UpCommand}" ToolTip="Move up" MinWidth="32" Margin="0,0,4,0" />
-                                        <Button Content="↓" Command="{Binding DownCommand}" ToolTip="Move down" MinWidth="32" Margin="0,0,4,0" />
-                                        <Button Content="✕" Command="{Binding RemoveCommand}" ToolTip="Remove this track" MinWidth="32" />
+                <!-- Video -->
+                <Border Style="{StaticResource Section}">
+                    <StackPanel>
+                        <DockPanel>
+                            <CheckBox DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding VideoEnabled}" Content="Record video"
+                                      VerticalAlignment="Top" />
+                            <TextBlock Text="Video" Style="{StaticResource SectionHeader}" />
+                        </DockPanel>
+                        <TextBlock Text="Turn video off to record the audio tracks only." Style="{StaticResource SectionNote}" />
+                        <StackPanel IsEnabled="{Binding VideoEnabled}">
+                            <Grid Style="{StaticResource Row}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <RadioButton Content="Whole monitor" IsChecked="{Binding CaptureMonitor}" GroupName="capture" MinWidth="164" />
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding Monitors}" SelectedValuePath="Value" SelectedValue="{Binding Monitor}"
+                                          MinWidth="320" HorizontalAlignment="Left" IsEnabled="{Binding CaptureMonitor}" AutomationProperties.Name="Monitor" />
+                            </Grid>
+                            <Grid Style="{StaticResource Row}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <RadioButton Content="One window" IsChecked="{Binding CaptureWindow}" GroupName="capture" MinWidth="164" VerticalAlignment="Top" />
+                                <StackPanel Grid.Column="1">
+                                    <ComboBox IsEditable="True" ItemsSource="{Binding Programs}" Text="{Binding Window, UpdateSourceTrigger=PropertyChanged}"
+                                              MinWidth="320" HorizontalAlignment="Left" IsEnabled="{Binding CaptureWindow}" AutomationProperties.Name="Window" />
+                                    <TextBlock Text="Exe name or part of the window title. Capture stops when it closes and starts again when it reopens."
+                                               Style="{StaticResource FieldHint}" />
+                                </StackPanel>
+                            </Grid>
+                            <Grid Style="{StaticResource Row}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Frames per second" Style="{StaticResource RowLabel}" />
+                                <ComboBox Grid.Column="1" ItemsSource="{x:Static vm:SettingsViewModel.FpsChoices}" SelectedValuePath="Value" SelectedValue="{Binding Fps}"
+                                          MinWidth="160" HorizontalAlignment="Left" AutomationProperties.Name="Frames per second" />
+                            </Grid>
+                            <Grid Style="{StaticResource Row}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Bitrate" Style="{StaticResource RowLabel}" VerticalAlignment="Top" Margin="0,6,16,0" />
+                                <StackPanel Grid.Column="1">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBox Text="{Binding BitrateMbps, UpdateSourceTrigger=PropertyChanged}" Width="100" AutomationProperties.Name="Bitrate in Mbps" />
+                                        <TextBlock Text="Mbps" VerticalAlignment="Center" Margin="8,0,0,0" />
                                     </StackPanel>
-                                    <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding TargetsHint}" Style="{StaticResource Caption}" Margin="0,6,0,0" />
-                                </Grid>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <StackPanel Orientation="Horizontal" Margin="0,4,0,10">
-                    <Button Content="Add track" Command="{Binding AddTrackCommand}" />
-                    <TextBlock Text="Quality per track" Style="{StaticResource FieldLabel}" Margin="24,0,8,0" />
-                    <ComboBox ItemsSource="{x:Static vm:SettingsViewModel.AudioBitrateChoices}" SelectedValuePath="Value" SelectedValue="{Binding AudioBitrate}" MinWidth="120" />
-                </StackPanel>
+                                    <TextBlock Text="20 is good for 1080p60; use more for 1440p." Style="{StaticResource FieldHint}" />
+                                </StackPanel>
+                            </Grid>
+                            <Grid Style="{StaticResource Row}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Resolution" Style="{StaticResource RowLabel}" />
+                                <ComboBox Grid.Column="1" ItemsSource="{x:Static vm:SettingsViewModel.HeightChoices}" SelectedValuePath="Value" SelectedValue="{Binding MaxHeight}"
+                                          MinWidth="200" HorizontalAlignment="Left" AutomationProperties.Name="Resolution" />
+                            </Grid>
+                            <Grid Style="{StaticResource Row}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Encoder" Style="{StaticResource RowLabel}" />
+                                <ComboBox Grid.Column="1" ItemsSource="{x:Static vm:SettingsViewModel.EncoderChoices}" SelectedValuePath="Value" SelectedValue="{Binding Encoder}"
+                                          MinWidth="200" HorizontalAlignment="Left" AutomationProperties.Name="Encoder" />
+                            </Grid>
+                            <Grid Style="{StaticResource Row}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="GPU" Style="{StaticResource RowLabel}" VerticalAlignment="Top" Margin="0,6,16,0" />
+                                <StackPanel Grid.Column="1">
+                                    <TextBox Text="{Binding Adapter, UpdateSourceTrigger=PropertyChanged}" Width="60" HorizontalAlignment="Left" AutomationProperties.Name="GPU number" />
+                                    <TextBlock Text="0 is the first GPU; change it only on PCs with several." Style="{StaticResource FieldHint}" />
+                                </StackPanel>
+                            </Grid>
+                            <CheckBox Content="Show the mouse pointer" IsChecked="{Binding Cursor}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
 
-                <TextBlock Text="Replay buffer" Style="{StaticResource SectionHeader}" />
-                <CheckBox Content="Keep the replay buffer running while SplitTrack is open" IsChecked="{Binding ReplayEnabled}" Margin="0,0,0,10" />
-                <Grid Style="{StaticResource Row}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="180" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="Clip length" Style="{StaticResource FieldLabel}" />
-                    <TextBox Grid.Column="1" Text="{Binding BufferSeconds, UpdateSourceTrigger=PropertyChanged}" Width="80" />
-                    <TextBlock Grid.Column="2" Text="seconds kept in memory (about 2.5 MB per second at 20 Mbps)" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="8,0,0,0" />
-                </Grid>
+                <!-- Audio tracks -->
+                <Border Style="{StaticResource Section}">
+                    <StackPanel>
+                        <DockPanel>
+                            <Button Command="{Binding RescanCommand}" DockPanel.Dock="Right" VerticalAlignment="Top"
+                                    ToolTip="Look for running programs and microphones again">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE72C;" Style="{StaticResource Icon}" FontSize="12" Margin="0,0,8,0" />
+                                    <TextBlock Text="Rescan devices" />
+                                </StackPanel>
+                            </Button>
+                            <TextBlock Text="Audio tracks" Style="{StaticResource SectionHeader}" />
+                        </DockPanel>
+                        <TextBlock Style="{StaticResource SectionNote}"
+                                   Text="Each track is kept separately in the file; you choose which ones to mix when you export. The first track is what plain video players play." />
+                        <ItemsControl ItemsSource="{Binding Tracks}" Focusable="False">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:TrackEditor}">
+                                    <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6"
+                                            Background="{DynamicResource SolidBackgroundFillColorTertiaryBrush}" Padding="12" Margin="0,0,0,8">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="130" />
+                                                <ColumnDefinition Width="230" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+                                            <Rectangle Grid.RowSpan="2" Style="{StaticResource TrackBar}"
+                                                       Fill="{Binding ColorIndex, Converter={StaticResource TrackColor}}" />
+                                            <TextBox Grid.Column="1" Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}" ToolTip="Track name"
+                                                     AutomationProperties.Name="Track name" Margin="0,0,8,0" />
+                                            <ComboBox Grid.Column="2" ItemsSource="{x:Static vm:TrackEditor.Kinds}" SelectedValuePath="Value" SelectedValue="{Binding Kind}"
+                                                      AutomationProperties.Name="Track kind" Margin="0,0,8,0" />
+                                            <DockPanel Grid.Column="3" Visibility="{Binding HasTargets, Converter={StaticResource BoolToVisibility}}">
+                                                <Button Content="Add…" DockPanel.Dock="Right" Margin="8,0,0,0" Click="OnPickTarget" ToolTip="Pick from what is running or plugged in now" />
+                                                <TextBox Text="{Binding Targets, UpdateSourceTrigger=PropertyChanged}" ToolTip="{Binding TargetsHint}"
+                                                         AutomationProperties.Name="{Binding TargetsLabel}" />
+                                            </DockPanel>
+                                            <CheckBox Grid.Column="3" VerticalAlignment="Center" Content="Leave app tracks out"
+                                                      IsChecked="{Binding LeaveOutApps}"
+                                                      Visibility="{Binding IsSystem, Converter={StaticResource BoolToVisibility}}"
+                                                      ToolTip="On: Discord and other app tracks are not heard twice, but some Windows sounds may be missing from System while one records. Off: System catches every sound except the game's, app tracks included." />
+                                            <StackPanel Grid.Column="4" Orientation="Horizontal" Margin="8,0,0,0">
+                                                <Button Command="{Binding UpCommand}" Style="{StaticResource IconButton}" Margin="0,0,4,0"
+                                                        ToolTip="Move up" AutomationProperties.Name="Move up">
+                                                    <TextBlock Text="&#xE70E;" Style="{StaticResource Icon}" FontSize="12" />
+                                                </Button>
+                                                <Button Command="{Binding DownCommand}" Style="{StaticResource IconButton}" Margin="0,0,4,0"
+                                                        ToolTip="Move down" AutomationProperties.Name="Move down">
+                                                    <TextBlock Text="&#xE70D;" Style="{StaticResource Icon}" FontSize="12" />
+                                                </Button>
+                                                <Button Command="{Binding RemoveCommand}" Style="{StaticResource IconButton}"
+                                                        ToolTip="Remove this track" AutomationProperties.Name="Remove track">
+                                                    <TextBlock Text="&#xE74D;" Style="{StaticResource Icon}" FontSize="12" />
+                                                </Button>
+                                            </StackPanel>
+                                            <TextBlock Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="3" Text="{Binding TargetsHint}" Style="{StaticResource FieldHint}" Margin="0,6,0,0" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                            <Button Command="{Binding AddTrackCommand}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE710;" Style="{StaticResource Icon}" FontSize="12" Margin="0,0,8,0" />
+                                    <TextBlock Text="Add track" />
+                                </StackPanel>
+                            </Button>
+                            <TextBlock Text="Quality per track" Style="{StaticResource FieldLabel}" Margin="24,0,8,0" />
+                            <ComboBox ItemsSource="{x:Static vm:SettingsViewModel.AudioBitrateChoices}" SelectedValuePath="Value" SelectedValue="{Binding AudioBitrate}"
+                                      MinWidth="120" AutomationProperties.Name="Quality per track" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
 
-                <TextBlock Text="Hotkeys" Style="{StaticResource SectionHeader}" />
-                <TextBlock Text="Click a box and press the keys. They work while a game has focus." Style="{StaticResource Caption}" Margin="0,0,0,10" />
-                <Grid Style="{StaticResource Row}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="180" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="Save clip" Style="{StaticResource FieldLabel}" />
-                    <TextBox Grid.Column="1" Text="{Binding SaveClipHotkey}" Width="200" IsReadOnly="True" PreviewKeyDown="OnHotkeyKeyDown" Tag="SaveClipHotkey" />
-                </Grid>
-                <Grid Style="{StaticResource Row}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="180" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="Start / stop recording" Style="{StaticResource FieldLabel}" />
-                    <TextBox Grid.Column="1" Text="{Binding RecordHotkey}" Width="200" IsReadOnly="True" PreviewKeyDown="OnHotkeyKeyDown" Tag="RecordHotkey" />
-                    <Button Grid.Column="2" Content="None" Margin="8,0,0,0" Click="OnClearRecordHotkey" />
-                </Grid>
+                <!-- Replay buffer -->
+                <Border Style="{StaticResource Section}">
+                    <StackPanel>
+                        <DockPanel>
+                            <CheckBox DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding ReplayEnabled}" Content="On"
+                                      VerticalAlignment="Top" AutomationProperties.Name="Keep the replay buffer running" />
+                            <TextBlock Text="Replay buffer" Style="{StaticResource SectionHeader}" />
+                        </DockPanel>
+                        <TextBlock Text="Keeps the last seconds in memory while SplitTrack is open, so Save clip can keep them." Style="{StaticResource SectionNote}" />
+                        <Grid Margin="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Clip length" Style="{StaticResource RowLabel}" VerticalAlignment="Top" Margin="0,6,16,0" />
+                            <StackPanel Grid.Column="1">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBox Text="{Binding BufferSeconds, UpdateSourceTrigger=PropertyChanged}" Width="80" AutomationProperties.Name="Clip length in seconds" />
+                                    <TextBlock Text="seconds" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                </StackPanel>
+                                <TextBlock Text="Uses about 2.5 MB of memory per second at 20 Mbps." Style="{StaticResource FieldHint}" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
 
-                <TextBlock Text="App" Style="{StaticResource SectionHeader}" />
-                <CheckBox Content="Start SplitTrack with Windows (in the tray)" IsChecked="{Binding StartWithWindows}" Margin="0,0,0,10" />
-                <TextBlock Text="{Binding SettingsPath, StringFormat='Settings file: {0}'}" Style="{StaticResource Caption}" TextWrapping="Wrap" />
-                <Button Content="Open logs folder" Command="{Binding OpenLogsCommand}" Margin="0,8,0,0" HorizontalAlignment="Left"
-                        ToolTip="The logs say what went wrong when something does" />
+                <!-- Hotkeys -->
+                <Border Style="{StaticResource Section}">
+                    <StackPanel>
+                        <TextBlock Text="Hotkeys" Style="{StaticResource SectionHeader}" />
+                        <TextBlock Text="Click a box and press the keys. They work while a game has focus." Style="{StaticResource SectionNote}" />
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Save clip" Style="{StaticResource RowLabel}" />
+                            <Grid Grid.Column="1" Width="220">
+                                <TextBox Text="{Binding SaveClipHotkey}" IsReadOnly="True" PreviewKeyDown="OnHotkeyKeyDown" Tag="SaveClipHotkey"
+                                         AutomationProperties.Name="Save clip hotkey" />
+                                <TextBlock Text="Click, then press keys" Style="{StaticResource Caption}" Margin="12,0" VerticalAlignment="Center" IsHitTestVisible="False"
+                                           Visibility="{Binding SaveClipHotkey, Converter={StaticResource NullToVisibility}, ConverterParameter=Invert}" />
+                            </Grid>
+                        </Grid>
+                        <Grid Margin="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Start or stop recording" Style="{StaticResource RowLabel}" />
+                            <Grid Grid.Column="1" Width="220">
+                                <TextBox Text="{Binding RecordHotkey}" IsReadOnly="True" PreviewKeyDown="OnHotkeyKeyDown" Tag="RecordHotkey"
+                                         AutomationProperties.Name="Record hotkey" />
+                                <TextBlock Text="None. Click, then press keys" Style="{StaticResource Caption}" Margin="12,0" VerticalAlignment="Center" IsHitTestVisible="False"
+                                           Visibility="{Binding RecordHotkey, Converter={StaticResource NullToVisibility}, ConverterParameter=Invert}" />
+                            </Grid>
+                            <Button Grid.Column="2" Content="Clear" Margin="8,0,0,0" Click="OnClearRecordHotkey" ToolTip="No hotkey for recording" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- App -->
+                <Border Style="{StaticResource Section}" Margin="0">
+                    <StackPanel>
+                        <TextBlock Text="App" Style="{StaticResource SectionHeader}" Margin="0,0,0,12" />
+                        <CheckBox Content="Start SplitTrack with Windows, in the tray" IsChecked="{Binding StartWithWindows}" Style="{StaticResource Switch}" Margin="0,0,0,14" />
+                        <TextBlock Text="{Binding SettingsPath, StringFormat='Settings file: {0}'}" Style="{StaticResource FieldHint}" Margin="0" />
+                        <Button Margin="0,10,0,0" HorizontalAlignment="Left" Command="{Binding OpenLogsCommand}"
+                                ToolTip="The logs say what went wrong when something does">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE838;" Style="{StaticResource Icon}" FontSize="12" Margin="0,0,8,0" />
+                                <TextBlock Text="Open logs folder" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Border>
             </StackPanel>
         </ScrollViewer>
     </DockPanel>
