@@ -44,9 +44,9 @@ public partial class ToastWindow : Window
         // Segoe Fluent Icons: check mark, warning, info.
         (int glyph, Color color) = kind switch
         {
-            ToastKind.Success => (0xE73E, Color.FromRgb(0x2E, 0xCC, 0x71)),
-            ToastKind.Error => (0xE7BA, Color.FromRgb(0xF3, 0x9C, 0x12)),
-            _ => (0xE946, Color.FromRgb(0x63, 0x66, 0xF1)),
+            ToastKind.Success => (0xE73E, Palette.Live),
+            ToastKind.Error => (0xE7BA, Palette.Caution),
+            _ => (0xE946, Palette.Brand),
         };
         Glyph.Text = char.ConvertFromUtf32(glyph);
         Badge.Background = new SolidColorBrush(color);

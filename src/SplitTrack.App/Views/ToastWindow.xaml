@@ -29,8 +29,7 @@
                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <TextBlock Text="SPLITTRACK" FontSize="10" FontWeight="SemiBold" Foreground="#80FFFFFF" />
-                    <TextBlock x:Name="TitleText" FontSize="14" FontWeight="SemiBold" Foreground="White" Margin="0,1,0,0" TextTrimming="CharacterEllipsis" />
+                    <TextBlock x:Name="TitleText" FontSize="14" FontWeight="SemiBold" Foreground="White" TextTrimming="CharacterEllipsis" />
                     <TextBlock x:Name="MessageText" FontSize="12" Foreground="#C8FFFFFF" Margin="0,2,0,0" TextWrapping="Wrap" MaxHeight="64" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
                 <TextBlock Grid.Column="2" Text="&#xE711;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="10" Foreground="#80FFFFFF"

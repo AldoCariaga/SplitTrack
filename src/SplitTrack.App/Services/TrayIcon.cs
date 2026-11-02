@@ -106,9 +106,9 @@ public sealed class TrayIcon : IDisposable
             g.DrawIcon(logo, new Rectangle(Point.Empty, size));
             Color? dot = state switch
             {
-                TrayState.Replay => Color.FromArgb(0x2E, 0xCC, 0x71),
-                TrayState.Recording => Color.FromArgb(0xE7, 0x4C, 0x3C),
-                TrayState.Error => Color.FromArgb(0xF3, 0x9C, 0x12),
+                TrayState.Replay => ToDrawing(Views.Palette.Live),
+                TrayState.Recording => ToDrawing(Views.Palette.Record),
+                TrayState.Error => ToDrawing(Views.Palette.Caution),
                 _ => null,
             };
             if (dot is { } color)
@@ -127,6 +127,8 @@ public sealed class TrayIcon : IDisposable
 
         return Icon.FromHandle(bitmap.GetHicon());
     }
+
+    private static Color ToDrawing(System.Windows.Media.Color color) => Color.FromArgb(color.R, color.G, color.B);
 
     [DllImport("user32.dll")]
     private static extern bool DestroyIcon(nint handle);

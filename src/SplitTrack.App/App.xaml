@@ -6,35 +6,14 @@
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
         <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Views/Theme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
             <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
             <views:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
             <views:NullToVisibilityConverter x:Key="NullToVisibility" />
             <views:EnumEqualsConverter x:Key="EnumEquals" />
-
-            <Style x:Key="Caption" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="12" />
-                <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
-                <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-            </Style>
-            <Style x:Key="SectionHeader" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="16" />
-                <Setter Property="FontWeight" Value="SemiBold" />
-                <Setter Property="Margin" Value="0,20,0,8" />
-            </Style>
-            <Style x:Key="FieldLabel" TargetType="TextBlock">
-                <Setter Property="VerticalAlignment" Value="Center" />
-                <Setter Property="Margin" Value="0,0,16,0" />
-            </Style>
-            <Style x:Key="Card" TargetType="Border">
-                <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
-                <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
-                <Setter Property="BorderThickness" Value="1" />
-                <Setter Property="CornerRadius" Value="8" />
-                <Setter Property="Padding" Value="16" />
-            </Style>
-            <SolidColorBrush x:Key="RecordBrush" Color="#E74C3C" />
-            <SolidColorBrush x:Key="LiveBrush" Color="#2ECC71" />
-            <SolidColorBrush x:Key="WarnBrush" Color="#F39C12" />
+            <views:ScaleConverter x:Key="Scale" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>
