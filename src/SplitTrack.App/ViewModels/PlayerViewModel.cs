@@ -40,6 +40,9 @@ public sealed class PlayerTrack : ObservableObject
 
     public string Description { get; }
 
+    /// <summary>Position in the track palette; see <see cref="TrackColors"/>.</summary>
+    public int ColorIndex { get; set; }
+
     public bool Enabled
     {
         get => _preview.Enabled;
@@ -110,6 +113,12 @@ public sealed class PlayerViewModel : ObservableObject, IDisposable
         foreach (PreviewTrack track in Player.Tracks)
         {
             Tracks.Add(new PlayerTrack(track, Source.Tracks.FirstOrDefault(t => t.Stream == track.Stream)));
+        }
+
+        IReadOnlyList<int> colors = TrackColors.For(Tracks.Select(t => t.Source?.Kind));
+        for (int i = 0; i < Tracks.Count; i++)
+        {
+            Tracks[i].ColorIndex = colors[i];
         }
 
         _size = SizeChoices[0];
@@ -224,13 +233,15 @@ public sealed class PlayerViewModel : ObservableObject, IDisposable
             double end = TrimEnd ?? Duration;
             return end <= start
                 ? "The end is before the start"
-                : $"{Formatting.Position(start)} to {Formatting.Position(end)}  ({Formatting.Position(end - start)})";
+                : TrimStart is null && TrimEnd is null
+                    ? $"Exporting the whole file ({Formatting.Position(Duration)})"
+                    : $"Exporting {Formatting.Position(end - start)} of {Formatting.Position(Duration)}";
         }
     }
 
-    public string TrimStartText => TrimStart is { } s ? Formatting.Position(s) : "start";
+    public string TrimStartText => Formatting.Position(TrimStart ?? 0);
 
-    public string TrimEndText => TrimEnd is { } e ? Formatting.Position(e) : "end";
+    public string TrimEndText => Formatting.Position(TrimEnd ?? Duration);
 
     public SizeChoice Size
     {

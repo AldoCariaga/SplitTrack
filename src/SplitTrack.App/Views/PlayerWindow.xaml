@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:SplitTrack.App.ViewModels"
-        Title="{Binding Title}" Width="1180" Height="900" MinWidth="820" MinHeight="620"
+        Title="{Binding Title}" Width="1180" Height="900" MinWidth="860" MinHeight="640"
         WindowStartupLocation="CenterOwner" PreviewKeyDown="OnKeyDown">
     <Grid Margin="16">
         <Grid.RowDefinitions>
@@ -15,92 +15,131 @@
         <Border Background="Black" CornerRadius="8" ClipToBounds="True" MouseLeftButtonUp="OnVideoClick">
             <Grid>
                 <Image x:Name="VideoImage" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" />
-                <TextBlock Text="Audio only" Foreground="#AAFFFFFF" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center"
-                           Visibility="{Binding HasVideo, Converter={StaticResource InverseBoolToVisibility}}" />
-                <TextBlock Text="{Binding AudioWarning}" Foreground="#FFF39C12" Margin="12" HorizontalAlignment="Left" VerticalAlignment="Top"
-                           Visibility="{Binding AudioWarning, Converter={StaticResource NullToVisibility}}" />
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Visibility="{Binding HasVideo, Converter={StaticResource InverseBoolToVisibility}}">
+                    <TextBlock Text="&#xE8D6;" Style="{StaticResource Icon}" FontSize="36" Foreground="#80FFFFFF" HorizontalAlignment="Center" />
+                    <TextBlock Text="Audio only" Foreground="#AAFFFFFF" FontSize="16" Margin="0,8,0,0" HorizontalAlignment="Center" />
+                </StackPanel>
+                <Border Background="{StaticResource WarnBrush}" CornerRadius="4" Padding="10,4" Margin="12" HorizontalAlignment="Left" VerticalAlignment="Top"
+                        Visibility="{Binding AudioWarning, Converter={StaticResource NullToVisibility}}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE7BA;" Style="{StaticResource Icon}" Foreground="White" FontSize="12" Margin="0,0,8,0" />
+                        <TextBlock Text="{Binding AudioWarning}" Foreground="White" />
+                    </StackPanel>
+                </Border>
             </Grid>
         </Border>
 
-        <!-- Transport and part to keep -->
-        <StackPanel Grid.Row="1" Margin="0,12,0,0">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <Button Command="{Binding PlayPauseCommand}" MinWidth="44" ToolTip="Play / pause (Space)">
-                    <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Text" Value="&#xE768;" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsPlaying}" Value="True">
-                                        <Setter Property="Text" Value="&#xE769;" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                </Button>
-                <TextBlock Grid.Column="1" Text="{Binding PositionText}" VerticalAlignment="Center" Margin="12,0" MinWidth="60" FontFamily="Consolas" />
-                <Grid Grid.Column="2" VerticalAlignment="Center">
-                    <Canvas x:Name="TrimCanvas" Height="6" VerticalAlignment="Center" Margin="9,0" IsHitTestVisible="False">
-                        <Rectangle x:Name="TrimRange" Height="6" Fill="{DynamicResource AccentFillColorDefaultBrush}" Opacity="0.35" RadiusX="3" RadiusY="3" />
-                    </Canvas>
-                    <Slider x:Name="SeekSlider" Minimum="0" Maximum="{Binding Duration}" IsMoveToPointEnabled="True"
-                            ValueChanged="OnSeekChanged" Thumb.DragStarted="OnSeekDragStarted" Thumb.DragCompleted="OnSeekDragCompleted" />
-                </Grid>
-                <TextBlock Grid.Column="3" Text="{Binding DurationText}" VerticalAlignment="Center" Margin="12,0,0,0" FontFamily="Consolas" />
-            </Grid>
-            <StackPanel Orientation="Horizontal" Margin="56,8,0,0">
-                <Button Command="{Binding SetStartCommand}" ToolTip="Start the part here (I)">
-                    <TextBlock Text="{Binding TrimStartText, StringFormat='[  From {0}'}" />
-                </Button>
-                <Button Command="{Binding SetEndCommand}" Margin="8,0,0,0" ToolTip="End the part here (O)">
-                    <TextBlock Text="{Binding TrimEndText, StringFormat='To {0}  ]'}" />
-                </Button>
-                <Button Content="Whole file" Command="{Binding ClearTrimCommand}" Margin="8,0,0,0" />
-                <TextBlock Text="{Binding TrimText}" VerticalAlignment="Center" Margin="16,0,0,0" Style="{StaticResource Caption}" />
-            </StackPanel>
-        </StackPanel>
-
-        <Grid Grid.Row="2" Margin="0,12,0,0">
+        <!-- Transport and the part to export -->
+        <Grid Grid.Row="1" Margin="0,12,0,0">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Button Command="{Binding PlayPauseCommand}" Width="44" Height="36" Padding="0">
+                <Button.ToolTip>Play or pause (Space)</Button.ToolTip>
+                <TextBlock FontSize="16">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource Icon}">
+                            <Setter Property="Text" Value="&#xE768;" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                                    <Setter Property="Text" Value="&#xE769;" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+                <Button.Style>
+                    <Style TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
+                        <Setter Property="AutomationProperties.Name" Value="Play" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                                <Setter Property="AutomationProperties.Name" Value="Pause" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+            <TextBlock Grid.Column="1" Text="{Binding PositionText}" Style="{StaticResource Timecode}" Margin="14,0" MinWidth="56" FontWeight="SemiBold" />
+            <Grid Grid.Column="2" VerticalAlignment="Center">
+                <!-- The part that will be exported, under the seek bar -->
+                <Canvas x:Name="TrimCanvas" Height="16" VerticalAlignment="Center" Margin="9,0" IsHitTestVisible="False">
+                    <Rectangle x:Name="TrimRange" Canvas.Top="2" Height="12" Fill="{DynamicResource AccentFillColorDefaultBrush}" Opacity="0.28" RadiusX="4" RadiusY="4" />
+                    <Rectangle x:Name="TrimStartMark" Width="2" Height="16" Fill="{DynamicResource AccentFillColorDefaultBrush}" RadiusX="1" RadiusY="1" Visibility="Collapsed" />
+                    <Rectangle x:Name="TrimEndMark" Width="2" Height="16" Fill="{DynamicResource AccentFillColorDefaultBrush}" RadiusX="1" RadiusY="1" Visibility="Collapsed" />
+                </Canvas>
+                <Slider x:Name="SeekSlider" Minimum="0" Maximum="{Binding Duration}" IsMoveToPointEnabled="True" AutomationProperties.Name="Position"
+                        ValueChanged="OnSeekChanged" Thumb.DragStarted="OnSeekDragStarted" Thumb.DragCompleted="OnSeekDragCompleted" />
+            </Grid>
+            <TextBlock Grid.Column="3" Text="{Binding DurationText}" Style="{StaticResource Timecode}" Margin="14,0,0,0"
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+
+            <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal" Margin="0,8,0,0">
+                <Button Command="{Binding SetStartCommand}" ToolTip="Start the part to export at the current position (I)" AutomationProperties.Name="Set start">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Start" />
+                        <TextBlock Text="{Binding TrimStartText}" Style="{StaticResource Timecode}" Margin="8,0,0,0" Opacity="0.7" />
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding SetEndCommand}" Margin="8,0,0,0" ToolTip="End the part to export at the current position (O)" AutomationProperties.Name="Set end">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="End" />
+                        <TextBlock Text="{Binding TrimEndText}" Style="{StaticResource Timecode}" Margin="8,0,0,0" Opacity="0.7" />
+                    </StackPanel>
+                </Button>
+                <Button Content="Clear" Command="{Binding ClearTrimCommand}" Margin="8,0,0,0" ToolTip="Export the whole file" />
+                <TextBlock Text="{Binding TrimText}" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="16,0,0,0"
+                           Typography.NumeralAlignment="Tabular" />
+            </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="2" Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*" />
                 <ColumnDefinition Width="16" />
-                <ColumnDefinition Width="400" />
+                <ColumnDefinition Width="2*" MinWidth="340" />
             </Grid.ColumnDefinitions>
 
             <!-- Tracks: the live mix, which is also what gets exported -->
             <Border Style="{StaticResource Card}">
                 <StackPanel>
-                    <TextBlock Text="Audio tracks" FontWeight="SemiBold" FontSize="15" />
-                    <TextBlock Text="What you hear is what gets exported." Style="{StaticResource Caption}" Margin="0,2,0,10" />
-                    <ItemsControl ItemsSource="{Binding Tracks}">
+                    <TextBlock Text="Tracks" Style="{StaticResource Title}" />
+                    <TextBlock Text="What you hear is what gets exported." Style="{StaticResource Caption}" Margin="0,2,0,14" />
+                    <ItemsControl ItemsSource="{Binding Tracks}" Focusable="False">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type vm:PlayerTrack}">
-                                <Grid Margin="0,0,0,10">
+                                <Grid Margin="0,0,0,12">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="190" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="170" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="56" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel>
-                                        <CheckBox IsChecked="{Binding Enabled}" MinWidth="0">
-                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                                    <Rectangle Style="{StaticResource TrackBar}"
+                                               Fill="{Binding ColorIndex, Converter={StaticResource TrackColor}}" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <CheckBox IsChecked="{Binding Enabled}" MinWidth="0" AutomationProperties.Name="{Binding Title}"
+                                                  ToolTip="Untick to leave this track out">
+                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                                         </CheckBox>
                                         <TextBlock Text="{Binding Description}" Style="{StaticResource Caption}" Margin="28,0,0,0" ToolTip="{Binding Description}" />
                                     </StackPanel>
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" IsEnabled="{Binding Enabled}">
+                                    <StackPanel Grid.Column="2" VerticalAlignment="Center" IsEnabled="{Binding Enabled}" Margin="8,0,0,0">
                                         <Slider Minimum="0" Maximum="400" Value="{Binding VolumePercent}" SmallChange="5" LargeChange="25"
-                                                TickFrequency="100" TickPlacement="BottomRight" IsSnapToTickEnabled="False"
-                                                ToolTip="Volume: 100 % is as recorded" MouseDoubleClick="OnVolumeReset" />
-                                        <ProgressBar Value="{Binding Level, Mode=OneWay}" Maximum="1" Height="4" Margin="9,2,9,0" />
+                                                AutomationProperties.Name="{Binding Title, StringFormat='{}{0} volume'}"
+                                                ToolTip="Volume. 100 % is as recorded; double-click to reset" MouseDoubleClick="OnVolumeReset" />
+                                        <ProgressBar Value="{Binding Level, Mode=OneWay}" Style="{StaticResource Meter}" Height="4" Margin="9,2,9,0"
+                                                     Foreground="{Binding ColorIndex, Converter={StaticResource TrackColor}}" />
                                     </StackPanel>
-                                    <TextBlock Grid.Column="2" Text="{Binding VolumeText}" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                                    <TextBlock Grid.Column="3" Text="{Binding VolumeText}" Style="{StaticResource Timecode}" HorizontalAlignment="Right" />
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -122,58 +161,76 @@
 
             <!-- Export -->
             <Border Grid.Column="2" Style="{StaticResource Card}">
-                <StackPanel>
-                    <TextBlock Text="Export to MP4" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                <StackPanel Grid.IsSharedSizeScope="True">
+                    <TextBlock Text="Export to MP4" Style="{StaticResource Title}" Margin="0,0,0,14" />
                     <Grid Margin="0,0,0,8">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="110" />
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="ExportLabel" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Text="Size limit" Style="{StaticResource FieldLabel}" />
-                        <ComboBox Grid.Column="1" ItemsSource="{x:Static vm:PlayerViewModel.SizeChoices}" SelectedItem="{Binding Size}" HorizontalAlignment="Stretch" />
+                        <ComboBox Grid.Column="1" ItemsSource="{x:Static vm:PlayerViewModel.SizeChoices}" SelectedItem="{Binding Size}" HorizontalAlignment="Stretch"
+                                  AutomationProperties.Name="Size limit" />
                     </Grid>
                     <Grid Margin="0,0,0,8" Visibility="{Binding IsCustomSize, Converter={StaticResource BoolToVisibility}}">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="110" />
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="ExportLabel" />
                             <ColumnDefinition Width="100" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <TextBox Grid.Column="1" Text="{Binding CustomMegabytes, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Column="1" Text="{Binding CustomMegabytes, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Size limit in MB" />
                         <TextBlock Grid.Column="2" Text="MB" VerticalAlignment="Center" Margin="8,0,0,0" />
                     </Grid>
-                    <Grid Margin="0,0,0,8">
+                    <Grid Margin="0,0,0,12">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="110" />
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="ExportLabel" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Text="Resolution" Style="{StaticResource FieldLabel}" />
-                        <ComboBox Grid.Column="1" ItemsSource="{x:Static vm:PlayerViewModel.HeightChoices}" SelectedValuePath="Value" SelectedValue="{Binding Height}" HorizontalAlignment="Stretch" />
+                        <ComboBox Grid.Column="1" ItemsSource="{x:Static vm:PlayerViewModel.HeightChoices}" SelectedValuePath="Value" SelectedValue="{Binding Height}"
+                                  HorizontalAlignment="Stretch" AutomationProperties.Name="Resolution" />
                     </Grid>
-                    <CheckBox Content="Start exactly at 'From' (re-encodes)" IsChecked="{Binding Precise}" Margin="0,0,0,12"
-                              ToolTip="Otherwise the video starts on the keyframe at or before 'From' (up to 1 s earlier), which is much faster." />
-                    <StackPanel Orientation="Horizontal">
-                        <Button Content="Export" Command="{Binding ExportCommand}" Style="{DynamicResource AccentButtonStyle}" MinWidth="110" />
-                        <Button Content="Cancel" Command="{Binding CancelCommand}" Margin="8,0,0,0"
+                    <CheckBox IsChecked="{Binding Precise}" Margin="0,0,0,16"
+                              ToolTip="Otherwise the video starts on the keyframe at or before the start (up to 1 s earlier), which is much faster.">
+                        <TextBlock Text="Start exactly at the start point (slower, re-encodes)" TextWrapping="Wrap" />
+                    </CheckBox>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Button Command="{Binding ExportCommand}" Style="{DynamicResource AccentButtonStyle}" HorizontalAlignment="Stretch" Padding="12,8">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xEDE1;" Style="{StaticResource Icon}" Margin="0,0,8,0" />
+                                <TextBlock Text="Export" FontWeight="SemiBold" />
+                            </StackPanel>
+                        </Button>
+                        <Button Grid.Column="1" Content="Cancel" Command="{Binding CancelCommand}" Margin="8,0,0,0"
                                 Visibility="{Binding IsExporting, Converter={StaticResource BoolToVisibility}}" />
-                    </StackPanel>
-                    <ProgressBar Value="{Binding Progress, Mode=OneWay}" Maximum="1" Height="4" Margin="0,12,0,0"
+                    </Grid>
+                    <ProgressBar Value="{Binding Progress, Mode=OneWay}" Style="{StaticResource Meter}" Height="4" Margin="0,12,0,0"
                                  Visibility="{Binding IsExporting, Converter={StaticResource BoolToVisibility}}" />
-                    <TextBlock Text="{Binding ExportStatus}" TextWrapping="Wrap" Margin="0,8,0,0">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ExportFailed}" Value="True">
-                                        <Setter Property="Foreground" Value="{StaticResource RecordBrush}" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                    <WrapPanel Margin="0,8,0,0" Visibility="{Binding HasResult, Converter={StaticResource BoolToVisibility}}">
-                        <Button Content="Copy file" Command="{Binding CopyResultCommand}" Margin="0,0,8,0" ToolTip="Then paste into Discord, a chat or a folder" />
-                        <Button Content="Show in folder" Command="{Binding ShowResultCommand}" Margin="0,0,8,0" />
-                        <Button Content="Play" Command="{Binding OpenResultCommand}" />
-                    </WrapPanel>
+                    <DockPanel Margin="0,10,0,0" Visibility="{Binding ExportStatus, Converter={StaticResource NullToVisibility}}">
+                        <TextBlock Text="&#xE73E;" Style="{StaticResource Icon}" Foreground="{StaticResource LiveBrush}" Margin="0,1,8,0" VerticalAlignment="Top"
+                                   Visibility="{Binding HasResult, Converter={StaticResource BoolToVisibility}}" />
+                        <TextBlock Text="{Binding ExportStatus}" TextWrapping="Wrap">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ExportFailed}" Value="True">
+                                            <Setter Property="Foreground" Value="{StaticResource RecordBrush}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </DockPanel>
+                    <UniformGrid Rows="1" Margin="0,10,0,0" Visibility="{Binding HasResult, Converter={StaticResource BoolToVisibility}}">
+                        <Button Content="Copy file" Command="{Binding CopyResultCommand}" Margin="0,0,4,0" HorizontalAlignment="Stretch"
+                                ToolTip="Then paste it into Discord, a chat or a folder" />
+                        <Button Content="Show in folder" Command="{Binding ShowResultCommand}" Margin="4,0" HorizontalAlignment="Stretch" />
+                        <Button Content="Play" Command="{Binding OpenResultCommand}" Margin="4,0,0,0" HorizontalAlignment="Stretch" />
+                    </UniformGrid>
                 </StackPanel>
             </Border>
         </Grid>

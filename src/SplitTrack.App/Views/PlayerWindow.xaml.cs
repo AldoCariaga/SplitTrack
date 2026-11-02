@@ -194,6 +194,8 @@ public partial class PlayerWindow : Window
         if (duration <= 0 || width <= 0 || !trimmed)
         {
             TrimRange.Visibility = Visibility.Collapsed;
+            TrimStartMark.Visibility = Visibility.Collapsed;
+            TrimEndMark.Visibility = Visibility.Collapsed;
             return;
         }
 
@@ -202,5 +204,11 @@ public partial class PlayerWindow : Window
         TrimRange.Visibility = Visibility.Visible;
         Canvas.SetLeft(TrimRange, start * width);
         TrimRange.Width = Math.Max(2, (end - start) * width);
+
+        // A tick at each end that was set.
+        TrimStartMark.Visibility = _viewModel.TrimStart is not null ? Visibility.Visible : Visibility.Collapsed;
+        TrimEndMark.Visibility = _viewModel.TrimEnd is not null ? Visibility.Visible : Visibility.Collapsed;
+        Canvas.SetLeft(TrimStartMark, (start * width) - (TrimStartMark.Width / 2));
+        Canvas.SetLeft(TrimEndMark, (end * width) - (TrimEndMark.Width / 2));
     }
 }
