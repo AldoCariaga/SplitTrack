@@ -3,6 +3,7 @@ using System.Windows.Threading;
 using SplitTrack.App.Services;
 using SplitTrack.Common.Time;
 using SplitTrack.Engine.Recording;
+using SplitTrack.Engine.Settings;
 
 namespace SplitTrack.App.ViewModels;
 
@@ -14,6 +15,9 @@ public sealed class TrackMeter(string title) : ObservableObject
     private bool _hasSignal;
 
     public string Title { get; } = title;
+
+    /// <summary>Position in the track palette; see <see cref="TrackColors"/>.</summary>
+    public int ColorIndex { get; set; }
 
     /// <summary>0 (−60 dBFS or quieter) to 1 (0 dBFS), falling back slowly like a meter.</summary>
     public double Level
@@ -141,9 +145,18 @@ public sealed class RecorderViewModel : ObservableObject
         private set => Set(ref _trayState, value);
     }
 
-    public string SaveClipHint => _service.SaveClipHotkey is { } hotkey ? $"Save clip ({hotkey})" : "Save clip";
+    /// <summary>The save-clip hotkey, or empty; the button shows it beside its label.</summary>
+    public string SaveClipHint => _service.SaveClipHotkey?.ToString() ?? string.Empty;
 
-    public string RecordHint => _service.RecordHotkey is { } hotkey ? $" ({hotkey})" : string.Empty;
+    /// <summary>The record hotkey, or empty.</summary>
+    public string RecordHint => _service.RecordHotkey?.ToString() ?? string.Empty;
+
+    /// <summary>What to do to get a first clip; shown by the empty library.</summary>
+    public string ClipHint => _service.ReplayEnabled
+        ? _service.SaveClipHotkey is { } hotkey
+            ? $"Press {hotkey} during a game to save the last {_service.Preset.Replay.BufferSeconds:0} seconds, or start a recording."
+            : "Save a clip with the button above, or start a recording."
+        : "Turn on the replay buffer above to save clips with a hotkey, or start a recording.";
 
     /// <summary>Meters only move while the window shows them; the state is kept current for the tray either way.</summary>
     public bool MetersVisible
@@ -175,6 +188,7 @@ public sealed class RecorderViewModel : ObservableObject
         OnPropertyChanged(nameof(HasError));
         OnPropertyChanged(nameof(SaveClipHint));
         OnPropertyChanged(nameof(RecordHint));
+        OnPropertyChanged(nameof(ClipHint));
 
         if (status?.Recording is { } recording)
         {
@@ -189,7 +203,7 @@ public sealed class RecorderViewModel : ObservableObject
             RecorderState.Running when status?.Buffer is { } buffer =>
                 ("Replay buffer on", HeldText(buffer.HeldTicks) + $"  ·  {Formatting.Size(buffer.Bytes)} in memory"),
             RecorderState.Running => ("Capturing", "Replay buffer off"),
-            _ => ("Off", _service.ReplayEnabled ? null : "Replay buffer off. Turn it on to save clips with the hotkey."),
+            _ => ("Off", _service.ReplayEnabled ? null : "The replay buffer is off. Turn it on to save clips with a hotkey."),
         };
 
         PresetText = _service.Settings.Presets.Count > 1
@@ -231,15 +245,21 @@ public sealed class RecorderViewModel : ObservableObject
         return held >= length ? $"{length:0} s ready" : $"{held:0} of {length:0} s held";
     }
 
+    private string? KindOf(string title) =>
+        _service.Preset.Audio.Tracks.FirstOrDefault(t => t.Title == title) is { } track
+            ? SettingsFile.KindName(track.Kind ?? AudioTrackKind.App)
+            : null;
+
     private void UpdateMeters(SessionStatus? status)
     {
         IReadOnlyList<AudioTrackStatus> tracks = status?.Audio ?? [];
         if (!tracks.Select(t => t.Title).SequenceEqual(Meters.Select(m => m.Title)))
         {
             Meters.Clear();
-            foreach (AudioTrackStatus track in tracks)
+            IReadOnlyList<int> colors = TrackColors.For(tracks.Select(t => KindOf(t.Title)));
+            for (int i = 0; i < tracks.Count; i++)
             {
-                Meters.Add(new TrackMeter(track.Title));
+                Meters.Add(new TrackMeter(tracks[i].Title) { ColorIndex = colors[i] });
             }
         }
 

@@ -174,6 +174,8 @@ public sealed class LibraryViewModel : ObservableObject, IDisposable
             {
                 _view.Refresh();
                 OnPropertyChanged(nameof(Summary));
+                OnPropertyChanged(nameof(IsEmpty));
+                OnPropertyChanged(nameof(EmptyTitle));
             }
         }
     }
@@ -190,7 +192,17 @@ public sealed class LibraryViewModel : ObservableObject, IDisposable
         }
     }
 
-    public bool IsEmpty => Entries.Count == 0;
+    /// <summary>Nothing to show under the current filter.</summary>
+    public bool IsEmpty => _view.IsEmpty;
+
+    public bool HasEntries => Entries.Count > 0;
+
+    public string EmptyTitle => _filter switch
+    {
+        LibraryFilter.Clips => "No clips yet",
+        LibraryFilter.Recordings => "No recordings yet",
+        _ => "Nothing recorded yet",
+    };
 
     public void Open(LibraryEntry entry) => OpenRequested?.Invoke(entry);
 
@@ -346,6 +358,7 @@ public sealed class LibraryViewModel : ObservableObject, IDisposable
 
         OnPropertyChanged(nameof(Summary));
         OnPropertyChanged(nameof(IsEmpty));
+        OnPropertyChanged(nameof(HasEntries));
         _ = LoadDetailsAsync(merged.Where(e => e.Thumbnail is null || e.DurationSeconds is null).ToList());
     }
 

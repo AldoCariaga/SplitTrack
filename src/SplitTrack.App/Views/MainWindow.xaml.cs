@@ -24,7 +24,10 @@ public partial class MainWindow : Window
 
     private void OnEntryDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if ((e.OriginalSource as DependencyObject)?.FindAncestor<ListBoxItem>()?.DataContext is LibraryEntry entry)
+        // A double click on a card's quick-action button is not an open.
+        var source = e.OriginalSource as DependencyObject;
+        if (source.FindAncestor<System.Windows.Controls.Primitives.ButtonBase>() is null
+            && source.FindAncestor<ListBoxItem>()?.DataContext is LibraryEntry entry)
         {
             Library.Open(entry);
         }
