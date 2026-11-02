@@ -1,445 +1,209 @@
 # SplitTrack
 
-A Windows game recorder that keeps **one audio track per source** (game, Discord, mic, system), so
-you can choose later which ones end up in the exported clip. Per-app audio comes from WASAPI
-process loopback, so no virtual audio cables are needed.
+**A Windows game recorder that keeps every audio source on its own track.**
 
-Status: **Milestone 7, the app** (`src/SplitTrack.App`, `SplitTrack.exe`): a tray app that keeps a
-replay buffer running, saves clips and starts/stops recordings with hotkeys, shows the library as
-a thumbnail grid, plays a recording with every track mixed live at its own volume, and exports
-the part you choose to MP4 (optionally under a size limit, e.g. Discord's 10 MB). Its settings
-page edits the same `settings.json` the command-line tools use. The command-line tools are still
-there: `tools/SplitTrack.RecordCli` (record / replay), `tools/SplitTrack.ExportCli` (export) and
-the milestone 1 and 2 proofs of concept (`tools/SplitTrack.AudioPoc`, `tools/SplitTrack.VideoPoc`).
+Game, Discord, your mic and the rest of your PC are recorded separately. When you export a clip you
+choose what goes in and how loud: drop your friends' voices, turn the game up, or mute yourself.
+You don't need virtual audio cables or any routing setup.
+
+<!-- Add a screenshot or GIF here, e.g. ![SplitTrack](docs/screenshot.png) -->
+
+## Why
+
+Most recorders mix everything into one audio track. That makes it hard to share a clip without the
+Discord call in it, or to fix a mic that was too loud. SplitTrack captures each program's audio on
+its own track (Windows *process loopback*), so you decide on the mix after the fact.
+
+## Features
+
+- **Separate audio tracks.** Game, Discord (or any app), microphone and system sound each get their own track.
+- **Replay buffer.** The last 60 seconds (or whatever length you set) are always kept in memory. Press a hotkey to save them as a clip.
+- **Full recordings** start and stop with a hotkey, and they run alongside the replay buffer.
+- **Library** of your clips and recordings, with thumbnails.
+- **Player with a live mixer.** Untick a track or change its volume (0–400 %) and you hear the change immediately. What you hear is what gets exported.
+- **Export to MP4** with trimming. You can set a **size limit** (e.g. 10 MB for Discord without Nitro), then use *Copy file* and paste the clip straight into Discord.
+- **Hardware encoding** on AMD (AMF), NVIDIA (NVENC) or Intel (QSV), with x264 on the CPU as a fallback.
+- **Finds your game on its own.** By default it records whatever is running full screen. Presets can switch settings automatically per game.
+- **Sits in the tray.** It can start with Windows and runs without admin rights.
 
 ## Requirements
 
-- Windows 11, or Windows build 20348 or newer (process loopback needs it), on x64.
-- Building: .NET 10 SDK. Running the published exe needs nothing installed.
-- No admin rights to run (the installer asks for them once).
+- **Windows 11, 64-bit.** Strictly, any Windows build 20348 or newer; per-app audio capture needs it. Windows 10 is not supported.
+- A GPU with an H.264 encoder is recommended (pretty much any AMD, NVIDIA or Intel GPU from the last several years). Without one, SplitTrack falls back to encoding on the CPU.
 
-## Build, run, publish
+## Install
 
-The video tools need FFmpeg's DLLs, which are not in git. Download them once (BtbN's 9.0 shared
-build, checked against its SHA-256; FFmpeg.AutoGen 9.0 is bound to exactly that major version):
+1. Download `SplitTrack-Setup-<version>.exe` from the [Releases](https://github.com/AldoCariaga/SplitTrack/releases) page.
+2. Run it. The setup asks for admin rights once, to install into `C:\Program Files\SplitTrack`
+   (you can choose another folder). SplitTrack itself runs without admin rights.
+3. Start SplitTrack from the last page of the setup or from the Start menu.
 
-```
-powershell -File tools\get-ffmpeg.ps1
-dotnet build -c Release
-```
+To **update**, run a newer setup. It upgrades in place and keeps your settings and recordings.
+To **uninstall**, go to *Settings → Apps*. Uninstalling keeps your settings, logs and recordings.
 
-```
-dotnet run --project src\SplitTrack.App -c Release
-dotnet publish src\SplitTrack.App -c Release -o out\app
+> Windows SmartScreen may warn about the installer because it is not code-signed. Click
+> *More info → Run anyway* if you trust the download.
 
-dotnet run --project tools\SplitTrack.AudioPoc -c Release -- list
-dotnet run --project tools\SplitTrack.AudioPoc -c Release -- record --process msedge.exe --mic --seconds 15 --out C:\Temp\poc
-dotnet publish tools\SplitTrack.AudioPoc -c Release -o out\audio-poc
+## Quick start
 
-dotnet run --project tools\SplitTrack.VideoPoc -c Release -- list
-dotnet run --project tools\SplitTrack.VideoPoc -c Release -- record --monitor 0 --seconds 15 --out C:\Temp\poc
-dotnet publish tools\SplitTrack.VideoPoc -c Release -o out\video-poc
+1. Open SplitTrack. It appears in the notification area (tray). Closing the window keeps it running
+   there; **Exit** is in the tray icon's menu.
+2. Go to **Settings** and check the audio tracks:
+   - **Game** is set to `auto`, which picks the program running full screen. If your game runs in a
+     window, add it with **Add…**, which lists running programs.
+   - Add an **App** track for `Discord.exe` if you want voice chat on its own track.
+   - Under **Mic**, pick your headset if it isn't the Windows default.
+   - Click **Save and apply**.
+3. Play. The level meters at the bottom of the window show each track picking up its own sound.
+4. Press **Alt+F10** after a good moment to save a clip. Press **Alt+F9** to start or stop a full recording.
+5. Open the clip from the **Library**. Untick or turn down the tracks you don't want, set a start and
+   end, and click **Export**.
 
-dotnet run --project tools\SplitTrack.RecordCli -c Release -- list
-dotnet run --project tools\SplitTrack.RecordCli -c Release -- record --game msedge.exe --mic --system --seconds 15 --out C:\Temp\poc
-dotnet run --project tools\SplitTrack.RecordCli -c Release -- replay --game msedge.exe --mic --system --buffer 30 --out C:\Temp\poc
-dotnet run --project tools\SplitTrack.RecordCli -c Release -- settings
-dotnet publish tools\SplitTrack.RecordCli -c Release -o out\record-cli
+## Using the app
 
-dotnet run --project tools\SplitTrack.ExportCli -c Release -- info C:\Temp\poc\<name>_rec.mkv
-dotnet run --project tools\SplitTrack.ExportCli -c Release -- export C:\Temp\poc\<name>_rec.mkv --tracks Game,Mic
-dotnet publish tools\SplitTrack.ExportCli -c Release -o out\export-cli
-```
+### Hotkeys
 
-`out\audio-poc\SplitTrack.AudioPoc.exe` (about 45 MB, self-contained) is the only file to copy to
-another PC. For video, copy `out\video-poc\SplitTrack.VideoPoc.exe` **and** the `ffmpeg` folder
-next to it (about 185 MB together); the same goes for `out\record-cli\SplitTrack.RecordCli.exe`.
-`out\export-cli\SplitTrack.ExportCli.exe` needs its `ffmpeg` folder too, which there also holds
-`ffmpeg.exe` and the DLLs it loads (about 225 MB together). The app is the same:
-`out\app\SplitTrack.exe` (about 85 MB) plus its `ffmpeg` folder, about 260 MB together.
+| Action | Default |
+|---|---|
+| Save a clip from the replay buffer | `Alt+F10` |
+| Start / stop a recording | `Alt+F9` |
 
-### Installer
+You can change both in **Settings**. The hotkeys work while a game has focus. If another program
+already uses one (NVIDIA's Instant Replay uses Alt+F10, for example), SplitTrack shows a
+notification so you know to pick a different key.
 
-For the app there is an installer, so only one file needs copying. It needs
-[Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup --scope user`):
+### The window
 
-```
-powershell -File tools\build-installer.ps1
-```
+- **Recorder bar** (along the bottom): the current state, with a green line while the replay buffer
+  runs, red while recording and amber if capture failed. It also shows what is being captured, one
+  level meter per track, and the **Replay buffer**, **Record** and **Save clip** buttons. The same
+  actions are in the tray menu.
+- **Library**: clips and recordings, newest first. Filter by *All / Clips / Recordings*. Double-click
+  (or press Enter) to open one. Right-click to show it in its folder or delete it (it goes to the
+  Recycle Bin).
+- **Settings**: capture target (monitor or window), quality, encoder, audio tracks, clip length,
+  hotkeys, presets and Start with Windows.
 
-It publishes the app and writes `out\installer\SplitTrack-Setup-<version>.exe` (about 120 MB; the
-version is `<Version>` in `src\SplitTrack.App\SplitTrack.App.csproj`). The setup asks for admin
-rights once and installs into `C:\Program Files\SplitTrack` by default; its Destination page lets
-you pick any other folder. FFmpeg goes in the `ffmpeg` subfolder, next to `SplitTrack.exe` and an
-`Uninstall SplitTrack` shortcut, and there is a Start menu shortcut. SplitTrack itself runs without
-admin rights. Running a newer setup upgrades in place (same folder, no Destination page);
-both setup and uninstall (Settings → Apps) first close a running SplitTrack, letting a recording
-finish. Uninstalling removes the program and the Start with Windows entry, and keeps
-`settings.json`, the logs and the recordings.
+A recording starts within a second of the key press, on the next keyframe. With the replay buffer
+off, capture runs only while you record.
 
-## The app
+### Player and export
 
-Start `SplitTrack.exe`. It sits in the notification area (the tray icon is the plain logo when
-idle, with a green dot while the replay buffer runs, red while recording, orange when capture failed); closing the
-window keeps it running there, and Exit is in the tray icon's menu.
+| Key | Action |
+|---|---|
+| `Space` | Play / pause |
+| `←` / `→` | Skip 5 s (with `Shift`: 1 s) |
+| `I` / `O` | Set the start / end of the part to export |
 
-- **Top of the window**: what is being captured, one level meter per audio track with what it is
-  recording right now (exe or device), and the buttons Save clip, Start/Stop recording and Replay
-  buffer on/off. The same actions are in the tray menu and on the hotkeys (default Alt+F10 saves
-  a clip, Alt+F9 starts and stops a recording). A notification in the top-right corner reports each saved clip or recording,
-  and problems such as a hotkey another program owns.
-- **Recording** starts on the next keyframe, at most a second after the press, and runs while the
-  replay buffer keeps going; with the replay buffer off, the capture starts for the recording only.
-- **Library**: clips and recordings, newest first, with thumbnails. Double-click (or Enter) opens
-  one; right-click to show it in its folder or delete it (to the Recycle Bin).
-- **Player**: plays the file with every audio track mixed live; untick a track or move its
-  volume (0–400 %, double-click for 100 %) and you hear the change at once. What you hear is what
-  gets exported. Space plays and pauses, arrows skip 5 s (Shift: 1 s), I and O set the part to
-  export. Export writes an MP4 next to the recording; Copy file puts it on the clipboard to paste
-  into Discord.
-- **Settings**: everything in `settings.json` (capture monitor or window, quality, encoder, the
-  audio tracks with pickers for running programs and microphones, clip length, hotkeys) and Start
-  with Windows. Save and apply restarts the capture with the new settings (after a running
-  recording ends).
+- **Tracks**: untick a track to leave it out, or drag its volume (double-click to reset to 100 %).
+- **Export to MP4** writes the file next to the recording. The options are:
+  - **Size limit**: keeps the file under that many MB, re-encoding only if it has to.
+  - **Resolution**: scales the video down.
+  - **Start exactly at the start point**: by default the cut starts on the nearest keyframe (up
+    to 1 s early), which is almost instant. Tick this to cut on the exact frame, at the cost of a
+    slower re-encode.
+- **Copy file** puts the export on the clipboard, ready to paste into Discord or a folder.
 
-Options: `--settings <file>` uses another settings file, `--minimized` starts in the tray (what
-Start with Windows uses), and `--exit` closes a running SplitTrack cleanly (a running recording is
-finished first). Starting it a second time brings the open one to the front.
-
-## RecordCli commands
-
-```
-SplitTrack.RecordCli list
-SplitTrack.RecordCli record [--monitor <n> | --window <hwnd|exe|title text> | --no-video]
-                            [--fps 60] [--bitrate <Mbps, 20>] [--height <px>] [--encoder auto|amf|nvenc|qsv|x264]
-                            [--cursor | --no-cursor] [--adapter <n>]
-                            [--game <exe[,exe...]>] [--app <Title>=<exe[,exe...]>]... [--mic [name[,name...]]]
-                            [--system | --system-with-apps] [--no-audio] [--audio-bitrate <kbps, 160>]
-                            [--seconds <n>] [--out <dir>] [--settings <file>] [--preset <name>]
-SplitTrack.RecordCli replay [same options as record] [--buffer <s, 60>] [--hotkey <keys, Alt+F10>] [--record | --no-record]
-SplitTrack.RecordCli settings [--settings <file>]
-SplitTrack.RecordCli settings save [options of record and replay, except --seconds]
-```
-
-### Settings
-
-`record` and `replay` start from `%LOCALAPPDATA%\SplitTrack\settings.json` (or `--settings <file>`);
-options on the command line override it for that run only. Without a file the defaults apply:
-primary monitor at 60 fps and 20 Mbps, encoder auto, tracks Game (`auto`), Mic and System, a 60 s buffer, Alt+F10.
-`settings` prints what is in effect; `settings save <options>` writes options into the file, e.g.
-
-```
-SplitTrack.RecordCli settings save --game VALORANT-Win64-Shipping.exe,cs2.exe --app Discord=Discord.exe --mic --system --hotkey Ctrl+Shift+F8
-SplitTrack.RecordCli replay
-```
-
-The file can also be edited by hand (comments and trailing commas are fine; unknown keys and
-out-of-range values are reported with their line and name):
-
-```jsonc
-{
-  "version": 2,
-  "libraryFolder": null,                 // null: Videos\SplitTrack
-  "hotkeys": {
-    "saveClip": "Alt+F10",
-    "toggleRecording": "Alt+F9"          // the app only; null or "" for none
-  },
-  "activePreset": "Desktop",             // used while none of the presets' games runs
-  "presets": [
-    {
-      "name": "Desktop",
-      "games": [],                       // exe names that switch the app to this preset
-      "video": {
-        "enabled": true,                 // false: audio only
-        "monitor": 0,
-        "window": null,                  // window handle, exe or title text instead of the monitor
-        "fps": 60,
-        "bitrateMbps": 20,
-        "maxHeight": null,               // e.g. 1080 to scale a 1440p monitor down
-        "encoder": "auto",               // auto, amf, nvenc, qsv, x264
-        "cursor": true,
-        "adapter": 0
-      },
-      "audio": {
-        "bitrateKbps": 160,
-        "tracks": [                      // in this order in the file
-          { "title": "Game", "kind": "game", "processes": ["auto"] },
-          { "title": "Discord", "kind": "app", "processes": ["Discord.exe"] },
-          { "title": "Mic", "kind": "microphone", "devices": ["Tamago"] },   // no devices: default mic
-          { "title": "System", "kind": "system" }   // "leaveOutApps": false records the app tracks in it too
-        ]
-      },
-      "replay": {
-        "enabled": true,                 // the app keeps the replay buffer running (RecordCli ignores this)
-        "bufferSeconds": 60,
-        "alsoRecord": false              // RecordCli replay only
-      }
-    },
-    {
-      "name": "Valorant",
-      "games": ["VALORANT-Win64-Shipping.exe"],
-      "video": { "window": "VALORANT-Win64-Shipping.exe", "fps": 144, "bitrateMbps": 30 },
-      "audio": { "tracks": [ { "title": "Game", "kind": "game", "processes": ["VALORANT-Win64-Shipping.exe"] },
-                             { "title": "Mic", "kind": "microphone" }, { "title": "System", "kind": "system" } ] },
-      "replay": { "bufferSeconds": 30 }
-    }
-  ]
-}
-```
-
-A section left out takes its defaults. Version 1 files (video, audio and replay at the top level)
-are read as one preset named `Default` and written back as version 2.
+Most exports finish in a second or two because the video is copied as it was recorded. It is only
+re-encoded for a size limit, a lower resolution or an exact cut.
 
 ### Presets
 
-A preset is a capture setup: video, audio tracks and the replay buffer. The library folder, the
-hotkeys and Start with Windows are shared. In the app:
+A preset is a capture setup: video settings, audio tracks and the replay buffer. The library folder,
+hotkeys and Start with Windows are shared by all presets.
 
-- **Settings → Presets** picks the preset the page edits (without switching to it), makes new ones
-  (a copy of the shown one) and deletes them. Its **Auto-switch for** list names the games that
-  select it; the checkbox under it makes it the default preset, used while none of those games runs.
-- **The tray menu's Preset submenu** (shown with two or more presets) switches by hand: the chosen
-  one becomes the default.
-- **Games switch on their own.** About once a second the app checks whether a preset's game is
-  running; when one starts, it switches to that preset, and when it closes, back to the default.
-  Only a change switches, so a preset picked by hand while a game runs stays until that game
-  closes. A recording is never cut: the switch waits until it stops. A game can be in one preset only.
-- Switching restarts capture, so the replay buffer starts empty.
+- In **Settings → Presets** you can create presets (each starts as a copy of the one shown), delete
+  them, and choose which one the page edits.
+- **Auto-switch for** lists the games that select a preset. When one of them starts, SplitTrack
+  switches to that preset, and when it closes, back to the default preset. A recording is never cut
+  off; the switch waits until it ends.
+- With two or more presets, the tray menu has a **Preset** submenu to switch by hand.
+- Switching presets restarts capture, so the replay buffer starts empty.
 
-RecordCli does not follow games: `--preset <name>` picks one for the run (default: the active
-one), and `settings save --preset <name> ...` makes it the active one, creating it as a copy of
-the active preset if the name is new.
+## What each track records
 
-On the command line, any of `--game`, `--app`, `--mic`, `--system`, `--system-with-apps` and `--no-audio` replaces the
-whole track list (in the order Game, apps, Mic, System); the other options change one value each.
-
-### Tracks
-
-Files go to the library folder, `Videos\SplitTrack` unless the settings or `--out` say otherwise,
-one subfolder per recording or clip, named like its files. `record` writes `<ts>_rec\<ts>_rec.mkv`:
-the video as in VideoPoc, then one AAC track (48 kHz stereo) per
-audio track:
-
-| Kind (option) | Track title | What it records |
-|---|---|---|
-| `game` (`--game X,Y`) | `Game` | The first of the process trees X, Y that is running. It may start after the recording and restart during it. `auto` stands for the program that is full screen in front (see below). At most one |
-| `app` (`--app Title=X`, repeatable) | `Title` | Same rules, e.g. `--app Discord=Discord.exe` |
-| `microphone` (`--mic [name,...]`) | `Mic` | Default microphone, or the first present whose name contains one of the names; follows device changes and replugs |
-| `system` (`--system`) | `System` | Everything except the game and the app tracks (everything while none runs). While an app track records, every other program with an audio session is captured on its own and mixed, since Windows can leave only one program out of a capture; one that starts playing mid-recording joins within a quarter of a second and stays until it exits. At most one. See the limits below |
-| `system` with `"leaveOutApps": false` (`--system-with-apps`) | `System` | Everything except the game, in one capture: nothing slips past it, but the app tracks are in it too (Discord is heard twice if you mix both) |
-
-Leaving the app tracks out has limits, all from what Windows tells SplitTrack:
-
-- **Windows' own sounds** (error and notification dings) usually report no program, so they are
-  missing from System while an app track records.
-- **Programs that started the game, an app track or SplitTrack**, e.g. Windows Explorer or the
-  terminal you ran RecordCli from, cannot be captured without what they started, so their own sounds
-  are left out.
-- **The first sound of a program** that had none yet loses up to a quarter of a second or so
-  while SplitTrack starts capturing it; its later sounds are complete.
-
-Turn `leaveOutApps` off (in the app: untick "Leave app tracks out" on the System track) if those
-sounds matter more than hearing Discord twice.
-
-A process list is tried in order only while nothing is captured: a running game is kept even if
-one earlier in the list starts later.
-
-`auto` (the default Game track) picks the program whose window is in front and covers its whole
-monitor: exclusive and borderless full screen count, a maximized window does not. It stays the game
-while it runs, also after Alt+Tab, until another program goes full screen in front or it exits. The
-desktop, browsers (full-screen video) and programs named by an App track are never picked; name a
-game that runs in a window, or that one of those programs runs, in the list instead.
-
-All tracks start and end on the same instant; a track whose source is quiet, absent or restarting
-is filled with silence. Each source's clock is gently resampled to the recording clock, so long
-recordings do not drift (the status line's `corr` column shows the correction in ppm). In VLC,
-choose the track under Audio → Audio Track. Stop with `--seconds`, Enter, or Ctrl+C; recording
-also stops when a captured window closes.
-
-`replay` keeps the last `--buffer` seconds in memory, already encoded (about 150 MB for 60 s at
-20 Mbps), and writes nothing until you press the hotkey. The hotkey works while a game has focus;
-S in the console window does the same. Each press saves `<ts>_clip\<ts>_clip.mkv` with every track, ending
-at the moment of the press and starting on a keyframe (at most 1 s before the buffer length, so
-a 60 s buffer gives clips of 60–61 s). Presses in quick succession give overlapping clips.
-`--record` also records the whole session, as `record` does. If another program already uses the
-hotkey (NVIDIA's Instant Replay uses Alt+F10), `replay` says so and exits; pick another with
-`--hotkey`, e.g. `--hotkey Ctrl+Shift+F8`.
-
-Next to each video there is `<name>.json`, a sidecar with what the file holds (length, the game
-exe that was captured, video settings, the audio tracks with their titles, stream numbers, kinds,
-configured targets and the exe or device last captured), and `<name>.jpg`, a 320 px
-thumbnail of the middle of the video. The sidecar is written last, so a video without one is an
-interrupted save. Exports go in the same subfolder. Entries that earlier versions saved directly in
-the library folder are still listed.
-
-## ExportCli commands
-
-```
-SplitTrack.ExportCli info <file>
-SplitTrack.ExportCli export <file> [--tracks <title|n>[=<volume %>][,...] | --no-audio] [--audio-bitrate <kbps, 160>]
-                                   [--from <time>] [--to <time>] [--precise]
-                                   [--size <MB>] [--height <px>] [--bitrate <Mbps>] [--reencode]
-                                   [--encoder auto|amf|nvenc|qsv|x264] [--out <file|dir>] [--overwrite]
-SplitTrack.ExportCli encoders
-```
-
-`<file>` is a recording's `.mkv` or its `.json` sidecar. `info` lists the audio tracks with their
-number, title, kind and what they captured. `export` writes `<name>_export.mp4` next to the source (or
-`--out`): H.264 video and **one** AAC track (48 kHz stereo) that mixes the tracks named in
-`--tracks` (all of them by default), each at its volume, e.g. `--tracks Game,Discord=80,Mic=150`.
-The mix is a plain sum, so a track at 100 % sounds as loud as in the recording; a limiter stops
-the sum from clipping. The moov box is at the front, so the file starts playing while it downloads
-(Discord, browsers, phones). An audio-only recording becomes `<name>_export.m4a`.
-
-The video is **copied** as recorded unless something needs a re-encode, so most exports take a
-second or two and lose nothing:
-
-| Option | Effect |
+| Track | What it records |
 |---|---|
-| `--from` / `--to` | The part to export: seconds (`75.5`) or `m:ss` / `h:mm:ss` (`1:15.5`). A copy starts on the keyframe at or before `--from`, at most 1 s earlier |
-| `--precise` | Start exactly at `--from`; re-encodes the video when `--from` is not on a keyframe |
-| `--size <MB>` | Keep the file at or under this many MB (1,000,000 bytes), e.g. `--size 10` for Discord without Nitro. Copies if that fits, otherwise re-encodes at the bitrate that fits (and tries again lower if it came out too big) |
-| `--height <px>` | Scale down, e.g. `--height 720`; re-encodes |
-| `--bitrate <Mbps>` | Video bitrate of a re-encode (default: the recording's, per pixel) |
-| `--reencode` | Re-encode even if nothing else asks for it |
-| `--encoder` | Encoder for a re-encode. `auto` takes the first GPU encoder that works (AMF, NVENC, QSV), else x264; with `--size` it takes x264, whose rate control lands on target (GPU encoders stop at a quality floor at low bitrates) |
+| **Game** | The game's audio only. `auto` picks the program whose window is in front and covers the whole monitor (exclusive or borderless full screen; a maximized window doesn't count). It keeps that program after Alt+Tab until another one goes full screen or it exits. Browsers and programs on an App track are never picked. The game may start after the recording does, and restart during it. |
+| **App** (e.g. Discord) | Only that program, including its child processes. |
+| **Mic** | Your default microphone, or the one you picked. It follows device changes and replugs. |
+| **System** | Everything else: your PC's audio *minus* the game and the app tracks. |
 
-Audio stays in sync to the sample however the file is cut. When `System` also contains Discord
-(recorded with `leaveOutApps` off, or before SplitTrack left the app tracks out) and both are
-chosen, `export` says so. Ctrl+C cancels and removes the unfinished file. `encoders` shows which encoders work for
-re-encoding on this PC.
+All tracks start and end at the same moment and stay in sync, even in long recordings. A source
+that is silent or not running is filled with silence.
 
-## AudioPoc commands
+**Limits of the System track.** Windows can only leave one program out of a single capture. So while
+an App track records, SplitTrack captures every other program separately and mixes them together.
+This works well, but:
 
-```
-SplitTrack.AudioPoc list
-SplitTrack.AudioPoc record [--process <pid|exe>]... [--exclude <pid|exe>] [--system-all]
-                           [--mic [name]] [--seconds <n>] [--out <dir>] [--format float48|pcm44]
-```
+- Windows' own sounds (error and notification dings) usually aren't tied to a program, so they are
+  missing from System.
+- Programs that launched the game, an app on an App track, or SplitTrack itself (Windows Explorer,
+  for example) can't be captured on their own, so their sounds are left out.
+- When a program plays its first sound, up to about a quarter of a second of it can be lost.
 
-| Option | Track file | What it records |
-|---|---|---|
-| `--process X` (repeatable) | `<ts>_proc_<exe>.wav` | Only that process tree, whichever output device it uses |
-| `--exclude X` | `<ts>_system.wav` | Everything **except** that process tree |
-| `--system-all` | `<ts>_sysall.wav` | Everything on the default output device |
-| `--mic [name]` | `<ts>_mic.wav` | The default mic, or the first one whose name contains `name` |
+If those sounds matter more to you, untick **Leave app tracks out** on the System track. System then
+records everything except the game in one capture. The catch is that Discord is on both the Discord
+and System tracks, so you would hear it twice if you export both.
 
-An exe name resolves to its **root** process, so `--process Discord.exe` also covers Discord's
-child audio process. All files start at the same instant and have exactly the same length; gaps
-where a source is quiet are filled with silence. Stop with `--seconds`, Enter, or Ctrl+C.
+## Where things are stored
 
-Windows can exclude only one process tree per stream, so the "system" track still contains Discord
-when you exclude the game. Uncheck one of the two at export.
+| What | Where |
+|---|---|
+| Clips and recordings | `Videos\SplitTrack`, one subfolder per recording (you can change this in Settings) |
+| Settings | `%LOCALAPPDATA%\SplitTrack\settings.json` |
+| Logs | `%LOCALAPPDATA%\SplitTrack\logs` |
 
-## VideoPoc commands
+Each recording is an `.mkv` file with one video track and one AAC audio track per source. You can
+open it in VLC and switch tracks under *Audio → Audio Track*. Next to it are a `.json` sidecar
+describing the tracks and a `.jpg` thumbnail. Exports are saved in the same folder.
 
-```
-SplitTrack.VideoPoc list
-SplitTrack.VideoPoc record [--monitor <n> | --window <hwnd|exe|title text>] [--fps 60] [--bitrate <Mbps, 20>]
-                           [--height <px>] [--encoder auto|amf|nvenc|qsv|x264] [--no-cursor]
-                           [--adapter <n>] [--seconds <n>] [--out <dir>]
-```
+A 60-second replay buffer at the default 20 Mbps uses about 150 MB of RAM.
 
-`list` shows GPUs, monitors, capturable windows, and which H.264 encoders actually work on this PC.
-`record` writes `<ts>_video.mkv`: H.264 (BT.709, limited range), constant frame rate, a keyframe
-every second, average bitrate `--bitrate` with peaks up to 1.5×. Capture is Windows Graphics Capture;
-colour conversion and scaling run on the GPU. `auto` uses the GPU vendor's encoder (AMD → AMF,
-NVIDIA → NVENC, Intel → QSV) and falls back to x264 on the CPU. A window that is resized keeps the
-first size (cropped or padded with black); a window that closes ends the recording.
+## Troubleshooting
 
-Logs: `%LOCALAPPDATA%\SplitTrack\logs`.
+- **A hotkey doesn't work.** Another program probably owns it (NVIDIA Instant Replay uses Alt+F10).
+  Choose a different hotkey in Settings.
+- **The Game track is silent.** Your game may run in a window, so `auto` doesn't pick it. Add its exe
+  to the Game track's list in Settings.
+- **I hear Discord twice in an export.** You exported both Discord and a System track that contains
+  Discord (recorded with *Leave app tracks out* off). Untick one of them.
+- **Which encoder is used?** `auto` picks your GPU's encoder (AMF, NVENC or QSV) and falls back to
+  x264. You can force one in Settings.
+- **Something else.** Check the logs in `%LOCALAPPDATA%\SplitTrack\logs` and
+  [open an issue](https://github.com/AldoCariaga/SplitTrack/issues) with them attached.
 
-## Testing on a gaming PC
+## Building from source
 
-### The app (milestone 7)
+Requires the .NET 10 SDK on Windows 11 x64:
 
-1. Copy `out\installer\SplitTrack-Setup-<version>.exe` over, run it, and start SplitTrack from the
-   last page of the setup or the Start menu.
-2. Settings: the Game track detects the full-screen game (`auto`); add games that run in a window
-   (Add… lists what is running), add an App track for
-   `Discord.exe`, pick your headset under Mic if it is not the default, Save and apply.
-3. In a Discord call, play a match. The meters at the top move for Game, Discord, Mic and System
-   (each one only for its own sound). Press Alt+F10 after a good moment, and Alt+F9 twice to
-   record a minute or so.
-4. Open the clip from the Library: picture and sound in sync (gunshots, voices); untick Discord
-   and System, and only the game and you remain.
-5. Export with Size limit 10 MB (Discord), Copy file, paste into Discord: it uploads and plays
-   inline, also on a phone.
-6. Unplug or switch the headset mid-match: no crash, the Mic meter follows. Quit and restart the
-   game while the app runs: the Game meter comes back.
-7. A 30–60 minute recording: the file plays to the end in sync; Task Manager shows SplitTrack's
-   memory flat over time.
-
-### Recorder (milestone 3)
-
-1. Copy `SplitTrack.RecordCli.exe` and its `ffmpeg` folder over.
-2. In a Discord call, with the game running:
-   `SplitTrack.RecordCli.exe record --game <Game>.exe --app Discord=Discord.exe --mic --system --seconds 60 --out C:\Temp\poc`
-3. Open the MKV in VLC and switch between the tracks (Audio → Audio Track). Check:
-   - Game has only the game, Discord only the call, Mic only you, System everything except the game and Discord
-     (with `--system-with-apps` instead: Discord and Windows dings in System too);
-   - a second Discord or Slack notification is complete in System;
-   - gunshots and voices line up with the picture;
-   - the summary shows every track at the same length, and `Corr` within a few hundred ppm.
-4. Start a recording *before* the game, quit the game and start it again mid-recording: the Game
-   track picks it up again within a quarter of a second each time.
-5. Unplug or switch the mic (or headset) mid-recording: no crash, the Mic track continues.
-6. A 30–60 minute session: no audible clicks, sound still in sync at the end.
-
-### Audio
-
-1. Copy `SplitTrack.AudioPoc.exe` over. Join a Discord voice call and start a game with sound.
-2. `SplitTrack.AudioPoc.exe list`: Discord.exe and the game should appear, marked `active`.
-3. `SplitTrack.AudioPoc.exe record --process Discord.exe --process <Game>.exe --exclude <Game>.exe --mic --seconds 30 --out C:\Temp\poc`
-   Talk, let a friend talk, and make game noise. Each meter should move only when its own source is audible.
-4. Open the WAVs in VLC or Media Player and check:
-   - every file is 30.000 s long;
-   - `proc_Discord` has only the call, `proc_<Game>` only the game, `mic` only you, `system` everything but the game;
-   - playback on your speakers or headphones was normal while recording;
-   - the summary shows `MaxDrift` of a few ms at most.
-5. Edge cases, none of which should crash: start recording before the game makes sound; mute
-   Discord for 10 s; switch Discord's output device mid-call; close the game mid-recording.
-
-If a player refuses the float WAVs, rerun with `--format pcm44`.
-
-### Video
-
-1. Copy `SplitTrack.VideoPoc.exe` and its `ffmpeg` folder over.
-2. `SplitTrack.VideoPoc.exe list`: your GPU appears, and `amf` (AMD), `nvenc` (NVIDIA) or `qsv`
-   (Intel) says `OK`; the last line names it as the auto choice.
-3. Start a game, then `SplitTrack.VideoPoc.exe record --monitor 0 --seconds 30 --out C:\Temp\poc`.
-   Repeat with `--window <Game>.exe` (borderless or windowed mode).
-4. Check the summary and the file in VLC:
-   - `skipped` is 0 or close to it, and encode time stays a few ms per frame;
-   - motion is smooth at 60 fps with no stutter, and colours look like the game;
-   - the game's own frame rate did not drop noticeably while recording.
-5. Edge cases: close the game mid-recording (`--window`), alt-tab out and back, record with
-   `--height 1080` on a 1440p or 4K monitor.
-
-## Layout
-
-```
-src/SplitTrack.Common    QPC clock, precise timer, logging, app data paths, console status, Windows version gate, AudioFormat, peak meter
-src/SplitTrack.Capture   Audio: WASAPI sources, device watcher, session scanner, aligner. Video: D3D11 device, Windows Graphics Capture
-src/SplitTrack.FFmpeg    FFmpeg loading and logging, packet and stream helpers
-src/SplitTrack.Encode    GPU BGRA→NV12 conversion, H.264 encoder (AMF / NVENC / QSV / x264), resampler, AAC encoder
-src/SplitTrack.Mux       WAV writer, MKV writer
-src/SplitTrack.Buffer    Replay buffer: the last seconds of encoded packets, cut into keyframe-aligned clips
-src/SplitTrack.Library   Library folder naming, JSON sidecars, thumbnails
-src/SplitTrack.Engine    Capture session: video loop, audio tracks, source watcher (process restarts, device changes),
-                         packet routing to file and replay buffer, clip saving, global hotkey, settings.json
-src/SplitTrack.Export    Export to MP4: track mix, keyframe or exact cut, size limit; runs ffmpeg.exe
-src/SplitTrack.Preview   Preview player: decode to BGRA frames and per-track audio rings, live mix to a WASAPI output
-src/SplitTrack.App       The WPF tray app: recorder service and hotkeys, library, player and export, settings
-tools/SplitTrack.AudioPoc
-tools/SplitTrack.VideoPoc
-tools/SplitTrack.RecordCli
-tools/SplitTrack.ExportCli
-tools/FFmpeg.targets     Copies the FFmpeg DLLs (and ffmpeg.exe for export) next to the video tools
-tools/get-ffmpeg.ps1
-tools/build-installer.ps1  Publishes the app and builds its installer
-installer/SplitTrack.iss   Inno Setup script of the installer
+```powershell
+powershell -File tools\get-ffmpeg.ps1   # downloads the FFmpeg DLLs (not in git)
+dotnet build -c Release
+dotnet run --project src\SplitTrack.App -c Release
 ```
 
-Win32/COM bindings are generated by CsWin32 from each project's `NativeMethods.txt`. The few WinRT
-interop calls CsWin32 cannot generate are in `src/SplitTrack.Capture/Video/Direct3DInterop.cs`.
+## Contributing
+
+Issues and pull requests are welcome. If you're reporting a bug, please attach the logs from
+`%LOCALAPPDATA%\SplitTrack\logs`.
+
+## Credits
+
+- [FFmpeg](https://ffmpeg.org/) (GPL build by [BtbN](https://github.com/BtbN/FFmpeg-Builds)), with x264
+- [FFmpeg.AutoGen](https://github.com/Ruslan-B/FFmpeg.AutoGen)
+- [CsWin32](https://github.com/microsoft/CsWin32)
+- [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows)
+- [Inno Setup](https://jrsoftware.org/isinfo.php)
+
+## License
+
+Copyright (C) 2026 Aldo
+
+SplitTrack is free software: you can redistribute it and/or modify it under the terms of the
+[GNU General Public License v3.0](LICENSE) or (at your option) any later version. It is
+distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; see the license for
+details.
+
+The installer also ships FFmpeg, a GPL build that includes x264. Its source code is available from
+[FFmpeg](https://ffmpeg.org/download.html) and [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds).
