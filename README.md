@@ -6,7 +6,7 @@ Game, Discord, your mic and the rest of your PC are recorded separately. When yo
 choose what goes in and how loud: drop your friends' voices, turn the game up, or mute yourself.
 You don't need virtual audio cables or any routing setup.
 
-<!-- Add a screenshot or GIF here, e.g. ![SplitTrack](docs/screenshot.png) -->
+![The SplitTrack player: a clip with Game, Mic, Discord and System on separate tracks, each with its own volume](docs/player.png)
 
 ## Why
 
@@ -73,6 +73,8 @@ already uses one (NVIDIA's Instant Replay uses Alt+F10, for example), SplitTrack
 notification so you know to pick a different key.
 
 ### The window
+
+![The SplitTrack library with clips and the recorder bar](docs/library.png)
 
 - **Recorder bar** (along the bottom): the current state, with a green line while the replay buffer
   runs, red while recording and amber if capture failed. It also shows what is being captured, one

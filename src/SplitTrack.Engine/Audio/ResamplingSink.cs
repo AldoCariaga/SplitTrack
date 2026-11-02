@@ -8,7 +8,8 @@ namespace SplitTrack.Engine.Audio;
 
 /// <summary>
 /// Between one source and its track's aligner: converts each packet to 48 kHz float stereo and
-/// steers the resampler so the source's clock follows QPC (docs: plan M3 "Clock drift").
+/// steers the resampler so the source's clock follows QPC. A device's sample clock drifts slightly
+/// from the system clock, so without this its track would slowly fall out of sync over a long recording.
 /// </summary>
 internal sealed class ResamplingSink : IAudioSink, IDisposable
 {
